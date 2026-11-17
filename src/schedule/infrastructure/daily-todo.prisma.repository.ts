@@ -4,9 +4,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   DailyTodoListRecord,
   DailyTodoListStatus,
+  DailyTodoTurn,
   FindDailyTodoInput,
   ReplaceDailyTodoInput,
-  WorkTurn,
 } from '../domain/daily-todo.type';
 import { DailyTodoRepositoryPort } from '../domain/port/daily-todo.repository.port';
 
@@ -58,7 +58,7 @@ export class DailyTodoPrismaRepository implements DailyTodoRepositoryPort {
       status: list.status as DailyTodoListStatus,
       entries: list.entries.map((entry) => ({
         scheduleItemId: entry.scheduleItemId,
-        turn: entry.turn as WorkTurn,
+        turn: entry.turn as DailyTodoTurn,
         observed: entry.observed,
         position: entry.position,
       })),

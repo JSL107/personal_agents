@@ -125,6 +125,13 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
               sourceWorkspace: notionTask.workspace,
             });
           }
+          // 매 회차 전수 조회하므로 여기서 갱신하면 노션에서 시작 전 ↔ 진행 중이 오가도 아침 목록이 따라간다.
+          if ((found.sourceStatus ?? null) !== filtered.status) {
+            await this.repository.updateSourceStatus({
+              id: found.id,
+              sourceStatus: filtered.status,
+            });
+          }
           await this.reopenIfCollectorClosed({
             found,
             notionTask,
@@ -149,6 +156,7 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
           sourceKey: notionTask.pageId,
           sourceUrl: notionTask.url,
           sourceWorkspace: notionTask.workspace,
+          sourceStatus: filtered.status,
           status: ScheduleStatus.OPEN,
         });
       }

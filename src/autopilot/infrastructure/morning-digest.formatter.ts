@@ -149,9 +149,12 @@ export const formatMorningDigest = (input: MorningDigestInput): string => {
                 ? [`• 외 ${todoSections.today.length - TODAY_TODO_BODY_MAX}개`]
                 : []),
             ]),
-        ...(todoSections.unstarted.length > 0
+        ...(todoSections.stalled.length > 0
+          ? [`• 멈춘 일 ${todoSections.stalled.length}개 (목록은 댓글에)`]
+          : []),
+        ...(todoSections.unstarted.length + todoSections.backlogCount > 0
           ? [
-              `• 시작 안 한 일 ${todoSections.unstarted.length}개 (목록은 댓글에)`,
+              `• 시작 안 한 일 ${todoSections.unstarted.length + todoSections.backlogCount}개 (목록은 댓글에)`,
             ]
           : []),
       ];

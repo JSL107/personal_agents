@@ -36,6 +36,7 @@ import {
   ScheduleFollowUpRecord,
   TransitionInput,
   UpdateFollowUpInput,
+  UpdateSourceStatusInput,
   UpdateSourceWorkspaceInput,
 } from '../domain/schedule.repository.type';
 import {
@@ -93,6 +94,7 @@ interface ScheduleItemRow {
   sourceKey?: string | null;
   sourceUrl?: string | null;
   sourceWorkspace?: string | null;
+  sourceStatus?: string | null;
   candidateExpiresAt?: Date | null;
   deliveryClaimedAt?: Date | null;
 }
@@ -135,6 +137,7 @@ const toRecord = (row: ScheduleItemRow): ScheduleItemRecord => {
     sourceKey: row.sourceKey ?? null,
     sourceUrl: row.sourceUrl ?? null,
     sourceWorkspace: toNotionWorkspace(row.sourceWorkspace),
+    sourceStatus: row.sourceStatus ?? null,
     candidateExpiresAt: row.candidateExpiresAt ?? null,
     deliveryClaimedAt: row.deliveryClaimedAt ?? null,
   };
@@ -441,6 +444,13 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     });
   }
 
+  async updateSourceStatus(input: UpdateSourceStatusInput): Promise<void> {
+    await this.prisma.scheduleItem.update({
+      where: { id: input.id },
+      data: { sourceStatus: input.sourceStatus },
+    });
+  }
+
   async createCollected(
     input: CollectedScheduleInput,
   ): Promise<ScheduleItemRecord | 'DUPLICATE'> {
@@ -456,6 +466,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
           sourceKey: input.sourceKey,
           sourceUrl: input.sourceUrl,
           sourceWorkspace: input.sourceWorkspace ?? null,
+          sourceStatus: input.sourceStatus ?? null,
           status: input.status,
           startedAt:
             input.startedAt ??

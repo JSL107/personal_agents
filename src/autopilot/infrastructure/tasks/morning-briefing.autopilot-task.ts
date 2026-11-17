@@ -408,9 +408,20 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
               `*남 기다리는 일 전체*\n${todoSections.waiting.map(formatMorningWaitingTodo).join('\n')}`,
             ]
           : []),
-        ...(todoSections.unstarted.length > 0
+        ...(todoSections.stalled.length > 0
           ? [
-              `*시작 안 한 일*\n${todoSections.unstarted.map(formatMorningTodo).join('\n')}`,
+              `*멈춘 일*\n${todoSections.stalled.map(formatMorningTodo).join('\n')}`,
+            ]
+          : []),
+        ...(todoSections.unstarted.length + todoSections.backlogCount > 0
+          ? [
+              [
+                '*시작 안 한 일*',
+                ...todoSections.unstarted.map(formatMorningTodo),
+                ...(todoSections.backlogCount > 0
+                  ? [`• 시작 전 백로그 ${todoSections.backlogCount}건`]
+                  : []),
+              ].join('\n'),
             ]
           : []),
         ...(posting.thread ? [posting.thread] : []),

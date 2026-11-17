@@ -1380,6 +1380,8 @@ model ScheduleItem {
   sourceUrl          String?            @map("source_url")
   // 원본이 속한 워크스페이스(Notion 은 `PERSONAL` / `WORK`). 상태 확인 때 그 통합으로만 묻는다.
   sourceWorkspace    String?            @map("source_workspace")
+  // 원본의 현재 상태값(Notion 은 판정에 쓴 상태 칸의 값). 아침 「시작 안 한 일」이 진행 중 카드와 백로그를 가른다.
+  sourceStatus       String?            @map("source_status")
   candidateExpiresAt DateTime?          @map("candidate_expires_at")
   deliveryClaimedAt  DateTime?          @map("delivery_claimed_at")
   followUps          ScheduleFollowUp[]

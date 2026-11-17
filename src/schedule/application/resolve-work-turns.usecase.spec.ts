@@ -311,6 +311,26 @@ describe('ResolveWorkTurnsUsecase', () => {
       wait: { label: '14일째 움직임 없음', days: 14 },
     });
   });
+  it('14일 이상 움직임 없는 초안도 MY_TURN 에 일수 라벨을 붙인다', async () => {
+    github.fetchAuthorPullRequestSignals.mockResolvedValue([
+      signal(1, { draft: true, updatedAt: '2026-10-21T03:00:00Z' }),
+    ]);
+    const result = await usecase.execute({
+      items: [
+        buildScheduleItemRecord({
+          source: ScheduleSource.GITHUB_PR,
+          sourceKey: url(1),
+        }),
+      ],
+      now,
+    });
+    expect(result.get(1)).toEqual({
+      turn: 'MY_TURN',
+      reason: '드래프트',
+      observed: true,
+      wait: { label: '14일째 움직임 없음', days: 14 },
+    });
+  });
   it('13일째이거나 활동 시각을 모르면 라벨을 붙이지 않는다', async () => {
     repository.findOpenLinkedPullRequestUrls.mockResolvedValue(
       new Map([[2, [url(2), url(3)]]]),

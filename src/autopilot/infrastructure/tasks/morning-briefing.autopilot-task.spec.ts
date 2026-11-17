@@ -116,6 +116,8 @@ const buildTask = (
         today: [],
         waiting: [],
         unstarted: [],
+        stalled: [],
+        backlogCount: 0,
       }),
       ...deps.buildMorningTodos,
     } as never,
@@ -304,6 +306,8 @@ describe('MorningBriefingAutopilotTask', () => {
         today: [],
         waiting: [],
         unstarted: [],
+        stalled: [],
+        backlogCount: 0,
       }),
     };
     const task = buildTask(
@@ -330,6 +334,8 @@ describe('MorningBriefingAutopilotTask', () => {
         today: [{ title: '저장소 작업', url: null, dayCount: 2, detail: null }],
         waiting: [],
         unstarted: [],
+        stalled: [],
+        backlogCount: 0,
       }),
     };
     const task = buildTask(
@@ -371,6 +377,8 @@ describe('MorningBriefingAutopilotTask', () => {
         today: [],
         waiting: [],
         unstarted: [],
+        stalled: [],
+        backlogCount: 0,
       }),
     };
     const plan = {
@@ -427,6 +435,8 @@ describe('MorningBriefingAutopilotTask', () => {
             today: [todo],
             waiting: [waiting],
             unstarted: [unstarted],
+            stalled: [],
+            backlogCount: 0,
           }),
         },
       },
@@ -439,6 +449,54 @@ describe('MorningBriefingAutopilotTask', () => {
     expect(result.detailText).toContain('*시작 안 한 일*\n• 시작 전 업무');
   });
 
+  it('멈춘 일은 따로 싣고 백로그는 건수 한 줄로 줄인다', async () => {
+    const todo = { title: '오늘 업무', url: null, dayCount: 2, detail: null };
+    const waiting = {
+      title: '리뷰 업무',
+      url: null,
+      dayCount: 3,
+      detail: '리뷰 대기',
+    };
+    const unstarted = {
+      title: '시작 전 업무',
+      url: null,
+      dayCount: 1,
+      detail: null,
+    };
+    const task = buildTask(
+      { execute: jest.fn().mockRejectedValue(new Error('계획 실패')) },
+      { humanize: jest.fn() },
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      {
+        buildMorningTodos: {
+          execute: jest.fn().mockResolvedValue({
+            loadFailed: false,
+            today: [todo],
+            waiting: [waiting],
+            unstarted: [unstarted],
+            stalled: [
+              {
+                title: '오래된 초안',
+                url: null,
+                dayCount: 9,
+                detail: '드래프트, 155일째 움직임 없음',
+              },
+            ],
+            backlogCount: 11,
+          }),
+        },
+      },
+    );
+
+    const result = await task.run(CTX);
+
+    expect(result.detailText).toContain('*멈춘 일*\n• 오래된 초안');
+    expect(result.detailText).toContain(
+      '*시작 안 한 일*\n• 시작 전 업무\n• 시작 전 백로그 11건',
+    );
+  });
+
   it('발송 기록 조회가 실패하면 보낸 것으로 보고 기존 목록을 지킨다', async () => {
     const buildMorningTodos = {
       execute: jest.fn().mockResolvedValue({
@@ -446,6 +504,8 @@ describe('MorningBriefingAutopilotTask', () => {
         today: [],
         waiting: [],
         unstarted: [],
+        stalled: [],
+        backlogCount: 0,
       }),
     };
     const deliveryRepository = {
@@ -473,6 +533,8 @@ describe('MorningBriefingAutopilotTask', () => {
         today: [],
         waiting: [],
         unstarted: [],
+        stalled: [],
+        backlogCount: 0,
       }),
     };
     const deliveryRepository = {
@@ -523,6 +585,8 @@ describe('MorningBriefingAutopilotTask', () => {
             today: [],
             waiting,
             unstarted: [],
+            stalled: [],
+            backlogCount: 0,
           }),
         },
       },
@@ -542,6 +606,8 @@ describe('MorningBriefingAutopilotTask', () => {
         today: [],
         waiting: [],
         unstarted: [],
+        stalled: [],
+        backlogCount: 0,
       }),
     };
     const task = buildTask(
@@ -684,6 +750,8 @@ describe('MorningBriefingAutopilotTask', () => {
             today: todos,
             waiting: [],
             unstarted: [],
+            stalled: [],
+            backlogCount: 0,
           }),
         },
         listNotifiable: {
@@ -1452,6 +1520,8 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
             ],
             waiting: [],
             unstarted: [],
+            stalled: [],
+            backlogCount: 0,
           }),
         },
       },
@@ -1607,6 +1677,8 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
             ],
             waiting: [],
             unstarted: [],
+            stalled: [],
+            backlogCount: 0,
           }),
         },
       },
