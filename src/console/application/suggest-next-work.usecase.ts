@@ -116,15 +116,28 @@ export class SuggestNextWorkUsecase {
   }
 }
 
-// 일정 등록·블로그 초안은 주기로 돌리는 일이 아니다. 제안을 수락하면 문장 없이 실행돼 맥락과
-// 무관하게 "무엇을 맡길까요?" 만 돌아온다(2026-10-23 일정, 2026-10-30 블로그 콘솔).
-const NEEDS_USER_SENTENCE: ReadonlySet<string> = new Set([
+// 원장 성공일 간격이 "평소 주기" 가 아닌 일꾼은 후보에서 뺀다. 제안을 수락하면 문장 없이 실행된다.
+// - 일정 등록·블로그 초안: 문장이 있어야 하는 일이다. 수락하면 맥락과 무관하게 "무엇을 맡길까요?" 만
+//   돌아온다(2026-10-23 일정, 2026-10-30 블로그 콘솔).
+// - 지연 보고·영상 보기·휴가·지원 기록: 사용자가 묻거나 입력을 줘야 도는 일이라 주기가 없다.
+// - 원화 공고: 매일 cron 수집은 agent_run 을 남기지 않아 수동 실행만 원장에 보인다. 실제로는 매일
+//   도는데 "32일째 안 했어요" 를 냈다(2026-11-17 콘솔).
+// - 모의투자: 원장 주기는 장마감 cron 의 것인데, 수락 경로(dispatcher)는 평가 없이 스냅샷만 읽는다.
+const NO_CYCLE_AGENT_TYPES: ReadonlySet<string> = new Set([
   AgentType.SCHEDULE,
   AgentType.BLOG,
+  AgentType.DELAY_REPORT,
+  AgentType.VIDEO_WATCH,
+  AgentType.VACATION,
+  AgentType.JOB_APPLICATION,
+  AgentType.ART_JOB_FEED,
+  AgentType.PAPER_TRADE,
 ]);
 
+// dispatcher 가 없는 내부 일꾼(ROUTER·HUMANIZER 등)은 제안을 수락해도 실행할 길이 없다.
 const isAvailableCandidate = (agent: ConsoleAgent): boolean =>
-  !NEEDS_USER_SENTENCE.has(agent.agentType) &&
+  agent.canDispatch &&
+  !NO_CYCLE_AGENT_TYPES.has(agent.agentType) &&
   agent.state !== ConsoleAgentState.IN_PROGRESS &&
   agent.state !== ConsoleAgentState.AWAITING_APPROVAL;
 
