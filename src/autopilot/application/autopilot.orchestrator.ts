@@ -212,8 +212,6 @@ export class AutopilotOrchestrator {
       notifyOwner?: boolean;
       // 스레드에 붙일 판정 버튼. 요약 본문과 따로 댓글로 나간다(task 결과 주석 참조).
       runVerdicts?: AutopilotTaskResult['runVerdicts'];
-      // 스레드에 붙일 주간 판정 카드(task 결과 주석 참조).
-      verdictCards?: AutopilotTaskResult['verdictCards'];
     }[] = [];
     // 카드는 자기를 낸 task 의 item 인덱스를 함께 들고 다닌다. `requiresDetailDelivery` 카드가
     // "내 전문이 실제로 나갔나" 를 아래에서 확인하려면 이 연결선이 필요하다 — items 와 previews 는
@@ -306,7 +304,6 @@ export class AutopilotOrchestrator {
               unfurlLinks: result.unfurlLinks,
               notifyOwner: NOTIFY_OWNER_TASK_IDS.has(entry.taskId),
               runVerdicts: result.runVerdicts,
-              verdictCards: result.verdictCards,
             });
           }
         }
@@ -709,25 +706,6 @@ export class AutopilotOrchestrator {
                   );
                 }
               }
-              // 주간 판정 카드(월요일 아침) — 매일 버튼과 같은 자리, 같은 실패 처리다.
-              for (const card of item.verdictCards ?? []) {
-                try {
-                  await this.slackNotifier.postMessage({
-                    kind: `autopilot:${groupKey}`,
-                    itemKinds: [item.taskId],
-                    target: resolved,
-                    text: card.text,
-                    threadTs: threadRootTs,
-                    blocks: card.blocks,
-                  });
-                } catch (error: unknown) {
-                  const message =
-                    error instanceof Error ? error.message : String(error);
-                  this.logger.warn(
-                    `Autopilot[${groupKey}] 주간 판정 카드 발송 실패: ${message}`,
-                  );
-                }
-              }
             }
           } else {
             // 메인 메시지 ts 미반환(Slack API 이상 등) — 스레드 상세를 붙일 수 없어 skip.
@@ -744,10 +722,7 @@ export class AutopilotOrchestrator {
               }
             }
             const skippedVerdictCount = items.reduce(
-              (total, item) =>
-                total +
-                (item.runVerdicts?.length ?? 0) +
-                (item.verdictCards?.length ?? 0),
+              (total, item) => total + (item.runVerdicts?.length ?? 0),
               0,
             );
             if (skippedVerdictCount > 0) {

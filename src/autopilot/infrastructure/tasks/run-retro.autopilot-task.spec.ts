@@ -69,7 +69,9 @@ describe('RunRetroAutopilotTask', () => {
     expect(result.summaryText).toContain(
       '171건 평균, 하한 50% · 필수 필드 존재 여부만 검사함',
     );
-    expect(result.summaryText).toContain('품질: 판정 없음');
+    expect(result.summaryText).toContain(
+      '품질: 표본 부족 (판정 0건, 5건부터 좋음/나쁨 표시)',
+    );
     expect(result.summaryText).toContain('산출물 형식이 계약과 어긋남');
     expect(result.summaryText).not.toContain('계약 점수');
     // 만점 워커는 실리지 않는다 — 조용한 계기판.
@@ -110,7 +112,7 @@ describe('RunRetroAutopilotTask', () => {
     );
   });
 
-  // 0건과 조회 실패를 섞으면 "판정 없음" 이 거짓말이 된다.
+  // 0건과 조회 실패를 섞으면 "표본 부족" 이 거짓말이 된다.
   it('판정 조회가 실패해도 형식 경보는 나가고 품질 칸은 조회 실패로 적는다', async () => {
     const service = makeService(lowScoreStats, lowScoreStats, {}, lowScore);
     const verdicts = {
@@ -127,7 +129,7 @@ describe('RunRetroAutopilotTask', () => {
 
     expect(result.summaryText).toContain('계획 대비 점검: 형식 준수율 30%');
     expect(result.summaryText).toContain('품질: 판정 조회 실패');
-    expect(result.summaryText).not.toContain('판정 없음');
+    expect(result.summaryText).not.toContain('표본 부족');
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('사람 판정 조회 실패'),
     );

@@ -1,6 +1,5 @@
 import {
   buildRunVerdictBlocks,
-  buildRunVerdictDigestPages,
   buildRunVerdictFallbackText,
   formatRunVerdictQuote,
   parseRunVerdictValue,
@@ -119,81 +118,17 @@ describe('run-verdict-message.builder', () => {
     expect(texts).toContain('*이 아쉬운 점, 실제로 있었던 일인가요?*');
   });
 
-  describe('주간 판정 카드', () => {
-    const entry = (agentRunId: number) => ({
-      agentRunId,
-      facets: ['retro_problem' as const, 'overall' as const],
-      dateLabel: '10/27(화)',
-      quote: '상벌점 기록 전환 PR(#4436) 담당자 답변 확인 근거가 없다.',
-    });
-
-    it('실행마다 날짜·인용 블록과 축별 물음 + 버튼을 싣는다', () => {
-      const pages = buildRunVerdictDigestPages({
-        heading: '🌙 저녁 회고 판정',
-        entries: [entry(11), entry(12)],
-      });
-      expect(pages).toHaveLength(1);
-      const blocks = pages[0] as (Block & { block_id?: string })[];
-
-      expect(blocks[0].text?.text).toContain('지난주 판정 안 된 2건');
-      expect(blocks[1].text?.text).toBe(
-        '*10/27(화)*\n*회고가 꼽은 아쉬운 점*\n> 상벌점 기록 전환 PR(#4436) 담당자 답변 확인 근거가 없다.',
-      );
-      expect(readRunVerdictStatusTargets(blocks)).toEqual([
-        { agentRunId: 11, facet: 'retro_problem' },
-        { agentRunId: 11, facet: 'overall' },
-        { agentRunId: 12, facet: 'retro_problem' },
-        { agentRunId: 12, facet: 'overall' },
-      ]);
-      // 버튼 값은 그 실행 몫 — 한 카드에 여러 실행이 있어도 판정이 섞이지 않는다.
-      const values = buttonsOf(blocks).map(
-        (button) => parseRunVerdictValue(button.value)?.agentRunId,
-      );
-      expect(new Set(values)).toEqual(new Set([11, 12]));
-    });
-
-    it('슬랙 블록 상한(50)을 넘으면 버리지 않고 다음 통으로 넘긴다', () => {
-      const entries = Array.from({ length: 12 }, (_, index) =>
-        entry(index + 1),
-      );
-      const pages = buildRunVerdictDigestPages({
-        heading: '🌙 저녁 회고 판정',
-        entries,
-      });
-
-      expect(pages).toHaveLength(2);
-      expect(pages.every((page) => page.length <= 50)).toBe(true);
-      expect(
-        pages.flatMap((page) =>
-          readRunVerdictStatusTargets(page)
-            .filter((target) => target.facet === 'overall')
-            .map((target) => target.agentRunId),
-        ),
-      ).toEqual(entries.map((item) => item.agentRunId));
-      expect((pages[1][0] as Block).text?.text).toContain('12건');
-      expect((pages[1][0] as Block).text?.text).toContain('(2/2)');
-    });
-  });
-
   describe('refreshRunVerdictStatuses — 누른 뒤 상태 줄만 다시 쓴다', () => {
     it('실행별 원장 값으로 상태 줄을 바꾸고 나머지 블록은 그대로 둔다', () => {
-      const [blocks] = buildRunVerdictDigestPages({
-        heading: '🗓️ 오늘 아침 계획 판정',
-        entries: [
-          {
-            agentRunId: 1,
-            facets: ['pm_plan'],
-            dateLabel: '10/27(화)',
-            quote: 'A',
-          },
-          {
-            agentRunId: 2,
-            facets: ['pm_plan'],
-            dateLabel: '10/28(수)',
-            quote: 'B',
-          },
-        ],
-      });
+      // 실행이 여럿 실린 메시지 — 이미 나간 옛 주간 카드가 이 모양이다.
+      const blocks = [1, 2].flatMap((agentRunId) =>
+        buildRunVerdictBlocks({
+          agentRunId,
+          facets: ['pm_plan'],
+          verdicts: new Map(),
+          quoteMrkdwn: `> ${agentRunId}`,
+        }),
+      );
 
       const refreshed = refreshRunVerdictStatuses({
         blocks,

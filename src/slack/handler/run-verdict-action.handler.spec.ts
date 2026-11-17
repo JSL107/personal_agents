@@ -1,7 +1,7 @@
 import { App } from '@slack/bolt';
 
 import { AgentRunVerdictRepositoryPort } from '../../agent-run/domain/port/agent-run-verdict.repository.port';
-import { buildRunVerdictDigestPages } from '../format/run-verdict-message.builder';
+import { buildRunVerdictBlocks } from '../format/run-verdict-message.builder';
 import { RunVerdictActionHandler } from './run-verdict-action.handler';
 
 type ActionHandler = (args: {
@@ -67,7 +67,6 @@ const setup = (
     record: jest.fn().mockResolvedValue(undefined),
     findByRun: jest.fn().mockResolvedValue([]),
     countByAgentType: jest.fn().mockResolvedValue([]),
-    findRunsForVerdictDigest: jest.fn().mockResolvedValue([]),
     ...repositoryOverride,
   };
   const { app, getHandler } = buildAppMock();
@@ -136,25 +135,16 @@ describe('RunVerdictActionHandler', () => {
     expect(respond).not.toHaveBeenCalled();
   });
 
-  it('주간 카드는 메시지를 통째로 바꾸지 않고, 실린 실행마다 원장 값으로 상태 줄만 다시 쓴다', async () => {
+  it('실행이 여럿 실린 메시지(옛 주간 카드)는 통째로 바꾸지 않고, 실린 실행마다 원장 값으로 상태 줄만 다시 쓴다', async () => {
     const { repository, update, invoke } = setup();
-    const [blocks] = buildRunVerdictDigestPages({
-      heading: '🗓️ 오늘 아침 계획 판정',
-      entries: [
-        {
-          agentRunId: 11,
-          facets: ['pm_plan'],
-          dateLabel: '10/27(화)',
-          quote: 'A',
-        },
-        {
-          agentRunId: 12,
-          facets: ['pm_plan'],
-          dateLabel: '10/28(수)',
-          quote: 'B',
-        },
-      ],
-    });
+    const blocks = [11, 12].flatMap((agentRunId) =>
+      buildRunVerdictBlocks({
+        agentRunId,
+        facets: ['pm_plan'],
+        verdicts: new Map(),
+        quoteMrkdwn: `> ${agentRunId}`,
+      }),
+    );
     repository.findByRun.mockImplementation(async (agentRunId) =>
       agentRunId === 12
         ? [{ facet: 'pm_plan', verdict: 'GOOD', slackUserId: 'U1' }]
@@ -177,7 +167,7 @@ describe('RunVerdictActionHandler', () => {
     const updated = update.mock.calls[0][0];
     expect(updated.text).toBe('주간 판정');
     expect(updated.blocks).toHaveLength(blocks.length);
-    // 인용·날짜 블록은 그대로다 — 다른 실행 몫이 사라지지 않는다.
+    // 머리·인용 블록은 그대로다 — 다른 실행 몫이 사라지지 않는다.
     expect(updated.blocks[1]).toBe(blocks[1]);
     expect(updated.blocks[4]).toBe(blocks[4]);
     expect(JSON.stringify(updated.blocks)).toContain(

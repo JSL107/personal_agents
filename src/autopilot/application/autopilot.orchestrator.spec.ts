@@ -1553,32 +1553,6 @@ describe('AutopilotOrchestrator', () => {
       ).toEqual(['RETRO_DETAIL', 'VERDICT', 'EVAL_DETAIL']);
     });
 
-    it('주간 판정 카드는 블록을 그대로 실어 상세 뒤 스레드 댓글로 붙인다', async () => {
-      const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: 'X' } }];
-      const morningTask = makeTask('morning-briefing', {
-        skip: false,
-        summaryText: 'MORNING',
-        detailText: 'PLAN',
-        verdictCards: [{ text: '주간 판정', blocks }],
-      });
-      const postMessageMock = jest.fn().mockResolvedValue({ ts: 'TS1' });
-      await buildOrchestrator([morningTask], postMessageMock).runGroup(
-        'morning',
-        [makeEntry('morning-briefing', 'morning-briefing')],
-        'U1',
-        'C1',
-      );
-
-      const threadCalls = postMessageMock.mock.calls
-        .map(([input]) => input)
-        .filter((input) => input.threadTs === 'TS1');
-      expect(threadCalls.map((input) => input.text)).toEqual([
-        'PLAN',
-        '주간 판정',
-      ]);
-      expect(threadCalls[1].blocks).toBe(blocks);
-    });
-
     it('한 task 가 실행 여러 개를 판정받으면 실행마다 댓글을 따로, 요청 순서대로 붙인다', async () => {
       const retroTask = makeTask('evening-retro-publish', {
         skip: false,
