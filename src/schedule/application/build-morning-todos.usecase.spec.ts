@@ -13,13 +13,22 @@ const createDeps = () => {
     replaceForDate: jest.fn().mockResolvedValue(undefined),
     findForDate: jest.fn().mockResolvedValue(null),
   };
+  const config = { get: jest.fn().mockReturnValue(undefined) };
   const usecase = new BuildMorningTodosUsecase(
     reconcile as never,
     resolve as never,
     repository as never,
     dailyTodoRepository as never,
+    config as never,
   );
-  return { usecase, reconcile, resolve, repository, dailyTodoRepository };
+  return {
+    usecase,
+    reconcile,
+    resolve,
+    repository,
+    dailyTodoRepository,
+    config,
+  };
 };
 
 describe('BuildMorningTodosUsecase', () => {
@@ -105,7 +114,7 @@ describe('BuildMorningTodosUsecase', () => {
     expect(result.waiting).toEqual([]);
   });
 
-  it('MY_TURN 먼저, 각 차례 안에서 일수 내림차순과 id 오름차순으로 정렬한다', async () => {
+  it('MY_TURN 먼저, 각 차례 안에서 일수 내림차순과 id 오름차순으로 정렬하고 움직임 없는 일은 멈춘 일로 뺀다', async () => {
     const { usecase, repository, resolve } = createDeps();
     repository.findUndated.mockResolvedValue([
       buildScheduleItemRecord({
@@ -159,14 +168,20 @@ describe('BuildMorningTodosUsecase', () => {
       '내 차례 빠른 번호',
       '내 차례 늦은 번호',
       '내 차례 최근 일',
-      '확인 못 한 오래된 일',
     ]);
-    expect(result.today.map((line) => line.dayCount)).toEqual([5, 5, 1, 6]);
+    expect(result.today.map((line) => line.dayCount)).toEqual([5, 5, 1]);
     expect(result.today.map((line) => line.detail)).toEqual([
       '충돌 있음',
       '승인됨',
       null,
-      '20일째 움직임 없음',
+    ]);
+    expect(result.stalled).toEqual([
+      {
+        title: '확인 못 한 오래된 일',
+        url: null,
+        dayCount: 6,
+        detail: '20일째 움직임 없음',
+      },
     ]);
   });
 
@@ -272,6 +287,120 @@ describe('BuildMorningTodosUsecase', () => {
         },
       ],
     });
+  });
+
+  // 몇 달째 손대지 않은 초안이 오늘 할 일을 채웠다 — 닫지 않고 멈춘 일로 보이게 두고, 저녁 완료율은 STALLED 로 뺀다.
+  it('움직임 없는 내 차례 PR 은 멈춘 일로 옮기고 STALLED 로 맨 뒤에 저장한다', async () => {
+    const { usecase, repository, resolve, dailyTodoRepository } = createDeps();
+    repository.findUndated.mockResolvedValue([
+      buildScheduleItemRecord({
+        id: 1,
+        title: '오래된 초안',
+        status: ScheduleStatus.IN_PROGRESS,
+      }),
+      buildScheduleItemRecord({
+        id: 2,
+        title: '오늘 할 일',
+        status: ScheduleStatus.IN_PROGRESS,
+      }),
+      buildScheduleItemRecord({
+        id: 3,
+        title: '오래 기다린 리뷰',
+        status: ScheduleStatus.IN_PROGRESS,
+      }),
+    ]);
+    resolve.execute.mockResolvedValue(
+      new Map([
+        [
+          1,
+          {
+            turn: 'MY_TURN',
+            reason: '드래프트',
+            observed: true,
+            wait: { label: '155일째 움직임 없음', days: 155 },
+          },
+        ],
+        [2, { turn: 'MY_TURN', reason: null, observed: true, wait: null }],
+        [
+          3,
+          {
+            turn: 'WAITING_OTHERS',
+            reason: '리뷰 대기',
+            observed: true,
+            wait: { label: '리뷰 30일째', days: 30 },
+          },
+        ],
+      ]),
+    );
+
+    const result = await usecase.execute(input);
+
+    expect(result.today.map((line) => line.title)).toEqual(['오늘 할 일']);
+    expect(result.waiting.map((line) => line.title)).toEqual([
+      '오래 기다린 리뷰',
+    ]);
+    expect(result.stalled.map((line) => [line.title, line.detail])).toEqual([
+      ['오래된 초안', '드래프트, 155일째 움직임 없음'],
+    ]);
+    expect(dailyTodoRepository.replaceForDate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entries: [
+          { scheduleItemId: 2, turn: 'MY_TURN', observed: true, position: 0 },
+          {
+            scheduleItemId: 3,
+            turn: 'WAITING_OTHERS',
+            observed: true,
+            position: 1,
+          },
+          { scheduleItemId: 1, turn: 'STALLED', observed: true, position: 2 },
+        ],
+      }),
+    );
+  });
+
+  it('노션 상태가 진행 중이 아닌 OPEN 카드는 건수로만 세고, 상태를 모르거나 노션이 아니면 펼친다', async () => {
+    const { usecase, repository, config } = createDeps();
+    const notion = (id: number, sourceStatus: string | null) =>
+      buildScheduleItemRecord({
+        id,
+        title: `노션 ${id}`,
+        status: ScheduleStatus.OPEN,
+        source: ScheduleSource.NOTION_TASK,
+        sourceStatus,
+      });
+    repository.findUndated.mockResolvedValue([
+      notion(1, '진행 중'),
+      notion(2, '테스트'),
+      notion(3, '시작 전'),
+      notion(4, '보류'),
+      notion(5, null),
+      buildScheduleItemRecord({
+        id: 6,
+        title: '직접 등록',
+        status: ScheduleStatus.OPEN,
+      }),
+    ]);
+
+    const result = await usecase.execute(input);
+
+    expect(result.unstarted.map((line) => line.title)).toEqual([
+      '노션 1',
+      '노션 2',
+      '노션 5',
+      '직접 등록',
+    ]);
+    expect(result.backlogCount).toBe(2);
+
+    config.get.mockImplementation((key: string) =>
+      key === 'SCHEDULE_NOTION_ACTIVE_VALUES' ? '시작 전' : undefined,
+    );
+    const overridden = await usecase.execute(input);
+    expect(overridden.unstarted.map((line) => line.title)).toEqual([
+      '노션 3',
+      '노션 5',
+      '직접 등록',
+    ]);
+    expect(overridden.backlogCount).toBe(3);
   });
 
   it('waiting은 일수 내림차순과 id 오름차순으로 정렬한다', async () => {

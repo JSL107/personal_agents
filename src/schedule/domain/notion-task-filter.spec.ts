@@ -30,6 +30,7 @@ describe('filterMyNotionTask', () => {
       title: '업무',
       startDate: { year: 2026, month: 11, day: 5 },
       dueDate: { year: 2026, month: 11, day: 10 },
+      status: '진행중',
     });
   });
 
@@ -62,22 +63,41 @@ describe('filterMyNotionTask', () => {
   });
 
   // DB 마다 완료 칸 이름이 다르다 — 작업 현황 DB 는 `상태` 가 분류용 select 이고 완료는 `진행단계` 에 있다.
-  it('나열한 상태 칸 중 하나라도 완료 값이면 제외한다', () => {
+  // 분류용 `상태` 에도 완료·아카이브가 있어, 아무 칸이나 종료값이면 닫으면 진행 중 카드가 닫힌다.
+  it('나열 순서상 값이 있는 첫 칸 하나가 판정한다', () => {
     const integration: NotionTask = {
       ...task,
       properties: { 담당자: '김준석', 상태: '개발', 진행단계: '완료' },
     };
-    const both = { ...config, statusProperties: ['상태', '진행단계'] };
-    expect(filterMyNotionTask(integration, both)).toBeNull();
+    const ordered = { ...config, statusProperties: ['진행단계', '상태'] };
+    expect(filterMyNotionTask(integration, ordered)).toBeNull();
     expect(
       filterMyNotionTask(
         {
           ...integration,
-          properties: { 담당자: '김준석', 상태: '개발', 진행단계: '진행중' },
+          properties: { 담당자: '김준석', 상태: '완료', 진행단계: '진행중' },
         },
-        both,
+        ordered,
       ),
-    ).not.toBeNull();
+    ).toMatchObject({ status: '진행중' });
+  });
+
+  it('앞 칸이 비면 다음 칸이 판정한다 — 그 칸이 없는 DB 도 같은 목록으로 거른다', () => {
+    const ordered = {
+      ...config,
+      statusProperties: ['실제 완료 여부', '진행단계', '상태'],
+    };
+    expect(readNotionStatus({ 상태: '완료' }, ordered)).toBe('DONE');
+    expect(readNotionStatus({ '실제 완료 여부': '중지' }, ordered)).toBe(
+      'ACTIVE',
+    );
+    expect(
+      readNotionStatus(
+        { '실제 완료 여부': '중지' },
+        { ...ordered, droppedValues: ['중지'] },
+      ),
+    ).toBe('DROPPED');
+    expect(readNotionStatus({}, ordered)).toBe('ACTIVE');
   });
 
   it('완료 상태는 제외한다', () => {
@@ -89,15 +109,13 @@ describe('filterMyNotionTask', () => {
     ).toBeNull();
   });
 
-  it('DROPPED 값이 DONE 값보다 먼저다', () => {
+  it('두 목록에 다 있는 값은 DROPPED 가 먼저다', () => {
     const both = {
       ...config,
-      statusProperties: ['상태', '진행단계'],
-      droppedValues: ['중복'],
+      doneValues: ['완료', '아카이브'],
+      droppedValues: ['아카이브'],
     };
-    expect(readNotionStatus({ 상태: '완료', 진행단계: '중복' }, both)).toBe(
-      'DROPPED',
-    );
+    expect(readNotionStatus({ 상태: '아카이브' }, both)).toBe('DROPPED');
   });
 
   it('수집은 DONE·DROPPED 를 모두 거른다', () => {
@@ -137,6 +155,7 @@ describe('filterMyNotionTask', () => {
       title: '업무',
       startDate: null,
       dueDate: { year: 2026, month: 11, day: 5 },
+      status: '진행중',
     });
   });
 });

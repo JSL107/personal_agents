@@ -64,6 +64,7 @@ export interface CollectedScheduleInput {
   sourceKey: string;
   sourceUrl: string | null;
   sourceWorkspace?: NotionWorkspace | null;
+  sourceStatus?: string | null;
   status: ScheduleStatus;
   startedAt?: Date | null;
   candidateExpiresAt?: Date | null;
@@ -72,6 +73,11 @@ export interface CollectedScheduleInput {
 export interface UpdateSourceWorkspaceInput {
   id: number;
   sourceWorkspace: NotionWorkspace;
+}
+
+export interface UpdateSourceStatusInput {
+  id: number;
+  sourceStatus: string | null;
 }
 
 export interface FindBySourceInput {

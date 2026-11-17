@@ -28,7 +28,14 @@ const base = (
   postings: null,
   invest: null,
   todos: [],
-  todoSections: { loadFailed: false, today: [], waiting: [], unstarted: [] },
+  todoSections: {
+    loadFailed: false,
+    today: [],
+    waiting: [],
+    unstarted: [],
+    stalled: [],
+    backlogCount: 0,
+  },
   planFailure: null,
   schedules: [],
   upcomingSchedules: [],
@@ -58,6 +65,8 @@ describe('formatMorningDigest', () => {
             ],
             waiting: [],
             unstarted: [],
+            stalled: [],
+            backlogCount: 0,
           },
           incidents: [{ label: '포트폴리오 사이트 발행 실패', dayCount: 2 }],
           resolvedIncidents: ['아침신문'],
@@ -106,6 +115,8 @@ describe('formatMorningDigest', () => {
             today,
             waiting: [],
             unstarted: [],
+            stalled: [],
+            backlogCount: 0,
           },
         }),
       ),
@@ -183,7 +194,14 @@ describe('formatMorningDigest', () => {
     );
     const text = formatMorningDigest(
       base({
-        todoSections: { loadFailed: false, today: [], waiting, unstarted: [] },
+        todoSections: {
+          loadFailed: false,
+          today: [],
+          waiting,
+          unstarted: [],
+          stalled: [],
+          backlogCount: 0,
+        },
       }),
     );
     expect(text).toContain(
@@ -201,12 +219,32 @@ describe('formatMorningDigest', () => {
           today: [],
           waiting: [],
           unstarted: [todoLine({ title: '첫째' }), todoLine({ title: '둘째' })],
+          stalled: [],
+          backlogCount: 0,
         },
       }),
     );
     expect(text).toContain('• 시작 안 한 일 2개 (목록은 댓글에)');
     expect(text).not.toContain('• 첫째');
     expect(formatMorningDigest(base())).not.toContain('시작 안 한 일');
+  });
+
+  it('멈춘 일은 수만 쓰고, 시작 안 한 일 수에는 백로그 건수도 더한다', () => {
+    const text = formatMorningDigest(
+      base({
+        todoSections: {
+          loadFailed: false,
+          today: [],
+          waiting: [],
+          unstarted: [todoLine({ title: '진행 중 카드' })],
+          stalled: [todoLine({ title: '오래된 초안' })],
+          backlogCount: 11,
+        },
+      }),
+    );
+    expect(text).toContain('• 멈춘 일 1개 (목록은 댓글에)');
+    expect(text).toContain('• 시작 안 한 일 12개 (목록은 댓글에)');
+    expect(text).not.toContain('오래된 초안');
   });
 
   it('저장소 실패는 불러오기 실패만 쓰고 PM 장애로 세지 않는다', () => {
@@ -217,6 +255,8 @@ describe('formatMorningDigest', () => {
           today: [],
           waiting: [],
           unstarted: [],
+          stalled: [],
+          backlogCount: 0,
         },
       }),
     );
@@ -243,6 +283,8 @@ describe('formatMorningDigest', () => {
             }),
           ],
           unstarted: [],
+          stalled: [],
+          backlogCount: 0,
         },
       }),
     );
@@ -260,6 +302,8 @@ describe('formatMorningDigest', () => {
           today: [todoLine({ title: '내 차례' })],
           waiting: [todoLine({ title: '상대 차례' })],
           unstarted: [todoLine({ title: '시작 전' })],
+          stalled: [],
+          backlogCount: 0,
         },
       }),
     );

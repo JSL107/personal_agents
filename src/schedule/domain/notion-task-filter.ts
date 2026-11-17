@@ -3,26 +3,34 @@ import { NotionTask } from '../../notion/domain/notion.type';
 import {
   FilteredNotionTask,
   NotionTaskFilterConfig,
+  PickNotionStatusValueInput,
 } from './notion-task-filter.type';
 
 export type NotionStatus = 'DONE' | 'DROPPED' | 'ACTIVE';
+
+// 나열 순서상 값이 있는 첫 칸 하나가 판정한다. 작업 현황 DB 는 분류용 `상태` 칸에도 완료·아카이브가 있어,
+// 아무 칸이나 종료값이면 닫으면 진행 중 카드가 닫힌다 — 그래서 env 에 `진행단계` 를 `상태` 앞에 둔다.
+// 빈 칸은 Notion 응답에서 빠지므로 칸이 없는 DB 는 다음 칸으로 넘어간다.
+export const pickNotionStatusValue = ({
+  properties,
+  config,
+}: PickNotionStatusValueInput): string | null =>
+  config.statusProperties
+    .map((property) => properties[property])
+    .find((value) => value !== undefined && value.length > 0) ?? null;
 
 export const readNotionStatus = (
   properties: Record<string, string>,
   config: NotionTaskFilterConfig,
 ): NotionStatus => {
-  if (
-    config.statusProperties.some((property) =>
-      config.droppedValues.includes(properties[property]),
-    )
-  ) {
+  const value = pickNotionStatusValue({ properties, config });
+  if (value === null) {
+    return 'ACTIVE';
+  }
+  if (config.droppedValues.includes(value)) {
     return 'DROPPED';
   }
-  if (
-    config.statusProperties.some((property) =>
-      config.doneValues.includes(properties[property]),
-    )
-  ) {
+  if (config.doneValues.includes(value)) {
     return 'DONE';
   }
   return 'ACTIVE';
@@ -57,5 +65,9 @@ export const filterMyNotionTask = (
   const startDate = isRange ? first : null;
   const dueDate = isRange ? second : first;
   const title = task.title.slice(0, 200);
-  return { title, startDate, dueDate };
+  const status = pickNotionStatusValue({
+    properties: task.properties,
+    config,
+  });
+  return { title, startDate, dueDate, status };
 };

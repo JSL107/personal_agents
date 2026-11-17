@@ -85,6 +85,7 @@ export interface ScheduleItemRecord {
   sourceKey?: string | null;
   sourceUrl?: string | null;
   sourceWorkspace?: NotionWorkspace | null;
+  sourceStatus?: string | null;
   candidateExpiresAt?: Date | null;
   deliveryClaimedAt?: Date | null;
   dueTime: string | null;
