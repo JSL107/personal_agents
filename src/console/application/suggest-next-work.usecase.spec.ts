@@ -13,6 +13,7 @@ interface AgentFixture {
   readonly agentType: AgentType;
   readonly displayName: string;
   readonly state?: ConsoleAgentState;
+  readonly canDispatch?: boolean;
 }
 
 const makeSnapshot = (agents: readonly AgentFixture[]): ConsoleSnapshot => ({
@@ -20,7 +21,7 @@ const makeSnapshot = (agents: readonly AgentFixture[]): ConsoleSnapshot => ({
     agentType: agent.agentType,
     displayName: agent.displayName,
     nickname: agent.displayName,
-    canDispatch: true,
+    canDispatch: agent.canDispatch ?? true,
     slashCommands: [],
     description: '',
     state: agent.state ?? ConsoleAgentState.WAITING,
@@ -147,6 +148,65 @@ describe('SuggestNextWorkUsecase', () => {
     ).toEqual([AgentType.PM]);
     expect(agentRunService.findRecentSucceededRuns).not.toHaveBeenCalledWith(
       expect.objectContaining({ agentType: AgentType.BLOG }),
+    );
+  });
+
+  // 2026-11-17 콘솔 — 매일 도는 원화 공고를 "32일째", 질문형인 지연 보고를 "5일째" 로 연달아 제안했다.
+  it.each([
+    AgentType.ART_JOB_FEED,
+    AgentType.DELAY_REPORT,
+    AgentType.VIDEO_WATCH,
+    AgentType.VACATION,
+    AgentType.JOB_APPLICATION,
+    AgentType.PAPER_TRADE,
+  ])(
+    '원장 간격이 평소 주기가 아닌 %s 는 밀려 보여도 제안하지 않는다',
+    async (agentType) => {
+      const { usecase, agentRunService } = make({
+        agents: [
+          { agentType, displayName: agentType },
+          { agentType: AgentType.PM, displayName: 'PM' },
+        ],
+        runsByAgentType: {
+          [agentType]: succeededAt(32, 33),
+          [AgentType.PM]: succeededAt(2, 3, 4),
+        },
+      });
+
+      const result = await usecase.execute();
+
+      expect(
+        result.suggestions.map((suggestion) => suggestion.agentType),
+      ).toEqual([AgentType.PM]);
+      expect(agentRunService.findRecentSucceededRuns).not.toHaveBeenCalledWith(
+        expect.objectContaining({ agentType }),
+      );
+    },
+  );
+
+  it('dispatcher 가 없는 내부 worker는 수락해도 실행할 수 없으니 제안하지 않는다', async () => {
+    const { usecase, agentRunService } = make({
+      agents: [
+        {
+          agentType: AgentType.ROUTER,
+          displayName: 'Router',
+          canDispatch: false,
+        },
+        { agentType: AgentType.PM, displayName: 'PM' },
+      ],
+      runsByAgentType: {
+        [AgentType.ROUTER]: succeededAt(10, 11, 12),
+        [AgentType.PM]: succeededAt(2, 3, 4),
+      },
+    });
+
+    const result = await usecase.execute();
+
+    expect(
+      result.suggestions.map((suggestion) => suggestion.agentType),
+    ).toEqual([AgentType.PM]);
+    expect(agentRunService.findRecentSucceededRuns).not.toHaveBeenCalledWith(
+      expect.objectContaining({ agentType: AgentType.ROUTER }),
     );
   });
 
