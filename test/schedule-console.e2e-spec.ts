@@ -58,7 +58,8 @@ describe('ScheduleConsoleController HTTP', () => {
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
     );
-    await app.init();
+    // 127.0.0.1 에 직접 띄운다 — supertest 가 `::` 에 띄우면 VS Code 등이 127.0.0.1 로 먼저 잡은 같은 포트로 요청이 새어 404·401·503 이 났다.
+    await app.listen(0, '127.0.0.1');
   });
 
   afterAll(async () => {

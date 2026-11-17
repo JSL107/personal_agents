@@ -55,7 +55,8 @@ describe('POST /v1/console/runs/:id/retry (e2e)', () => {
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
     );
-    await app.init();
+    // 127.0.0.1 에 직접 띄운다 — supertest 가 `::` 에 띄우면 VS Code 등이 127.0.0.1 로 먼저 잡은 같은 포트로 요청이 새어 404·401·503 이 났다.
+    await app.listen(0, '127.0.0.1');
   });
 
   afterEach(async () => {
@@ -63,9 +64,7 @@ describe('POST /v1/console/runs/:id/retry (e2e)', () => {
   });
 
   const post = (id: string) =>
-    request(app.getHttpAdapter().getInstance()).post(
-      `/v1/console/runs/${id}/retry`,
-    );
+    request(app.getHttpServer()).post(`/v1/console/runs/${id}/retry`);
 
   it('판정을 통과하면 202 로 접수하고 owner 명의로 판정을 받는다', async () => {
     prepare.mockResolvedValue({
@@ -122,13 +121,13 @@ describe('POST /v1/console/runs/:id/retry (e2e)', () => {
   });
 
   it('mascot chatter의 잘못된 trigger와 since는 400', async () => {
-    const endpoint = request(app.getHttpAdapter().getInstance()).post(
+    const endpoint = request(app.getHttpServer()).post(
       '/v1/console/mascot/chatter',
     );
     const invalidTrigger = await endpoint.send({ trigger: 'UNKNOWN' });
     expect(invalidTrigger.status).toBe(400);
 
-    const invalidSince = await request(app.getHttpAdapter().getInstance())
+    const invalidSince = await request(app.getHttpServer())
       .post('/v1/console/mascot/chatter')
       .send({ trigger: 'EVENTS', since: 'not-a-date' });
     expect(invalidSince.status).toBe(400);
