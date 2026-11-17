@@ -17,5 +17,6 @@ export const formatPmPlanQuote = (output: unknown): string | undefined => {
   if (unique.length === 0) {
     return undefined;
   }
-  return unique.join(' / ');
+  const quote = unique.join(' / ');
+  return quote;
 };
