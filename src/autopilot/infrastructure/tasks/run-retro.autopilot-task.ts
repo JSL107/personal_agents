@@ -113,7 +113,7 @@ export class RunRetroAutopilotTask implements AutopilotTask {
   }
 
   // 사람 판정은 형식 경보에 덧붙는 정보다 — 이 조회가 실패해도 경보는 나가고, 문구가
-  // "판정 없음" 대신 "판정 조회 실패" 로 바뀐다(null). 0건과 실패를 섞으면 품질 신호가 거짓이 된다.
+  // "표본 부족" 대신 "판정 조회 실패" 로 바뀐다(null). 0건과 실패를 섞으면 품질 신호가 거짓이 된다.
   private async countVerdictsSafely(): Promise<AgentVerdictCountRow[] | null> {
     try {
       return await this.verdictRepository.countByAgentType({

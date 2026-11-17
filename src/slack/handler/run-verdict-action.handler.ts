@@ -31,7 +31,7 @@ import {
 } from '../format/run-verdict-message.builder';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
 
-// 실행별 판정 버튼(저녁 회고·PO 대행·아침 계획 스레드 댓글, 월요일 주간 판정 카드) 처리 — 누르면 저장하고
+// 실행별 판정 버튼(저녁 회고·PO 대행·아침 계획 스레드 댓글, 이미 나간 옛 주간 판정 카드) 처리 — 누르면 저장하고
 // 그 메시지의 상태 줄을 "판정됨" 으로 다시 쓴다.
 // 설계: docs/superpowers/specs/2026-09-30-human-feedback-channel-design.md §3·§4.
 //

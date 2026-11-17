@@ -1,3 +1,4 @@
+import { DailyPlan } from '../../../agent/pm/domain/pm-agent.type';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
@@ -6,6 +7,23 @@ import { EveningRetroPublishTask } from './evening-retro-publish.autopilot-task'
 const CTX = { ownerSlackUserId: 'U1', firedAtKst: '2026-07-03' };
 // CTX 회차 날짜(07-03 KST)의 아침 09:00 — 아침 PM 실행은 회차 날짜에 끝난 것만 판정 대상이다.
 const CTX_MORNING_ENDED_AT = new Date('2026-07-03T00:00:00.000Z');
+
+// 원장의 PM 실행 output 은 DailyPlan 그대로다 — 인용은 그 모양일 때만 붙는다.
+const pmPlanOutput = (title: string): DailyPlan => ({
+  topPriority: {
+    id: `user:${title}`,
+    title,
+    source: 'USER_INPUT',
+    subtasks: [],
+    isCriticalPath: false,
+  },
+  varianceAnalysis: { rolledOverTasks: [], analysisReasoning: '' },
+  morning: [],
+  afternoon: [],
+  blocker: null,
+  estimatedHours: 4,
+  reasoning: 'r',
+});
 
 const RETRO_RESPONSE = {
   text: JSON.stringify({
@@ -1152,7 +1170,7 @@ describe('EveningRetroPublishTask', () => {
           },
           {
             id: 70,
-            output: { topPriority: { title: '감사로그 요구사항 작성' } },
+            output: pmPlanOutput('감사로그 요구사항 작성'),
             endedAt: CTX_MORNING_ENDED_AT,
             triggerType: TriggerType.MORNING_BRIEFING_CRON,
           },
@@ -1182,13 +1200,13 @@ describe('EveningRetroPublishTask', () => {
         pmRuns: [
           {
             id: 71,
-            output: { topPriority: { title: '다음 날 계획' } },
+            output: pmPlanOutput('다음 날 계획'),
             endedAt: new Date('2026-07-04T00:00:00.000Z'),
             triggerType: TriggerType.MORNING_BRIEFING_CRON,
           },
           {
             id: 70,
-            output: { topPriority: { title: '감사로그 요구사항 작성' } },
+            output: pmPlanOutput('감사로그 요구사항 작성'),
             endedAt: CTX_MORNING_ENDED_AT,
             triggerType: TriggerType.MORNING_BRIEFING_CRON,
           },

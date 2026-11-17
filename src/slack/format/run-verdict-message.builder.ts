@@ -1,7 +1,6 @@
 import {
   getRunVerdictHeading,
   getRunVerdictLabel,
-  getRunVerdictQuoteLabel,
   isAllowedRunVerdict,
   isRunVerdictFacet,
   RUN_VERDICT_FACETS,
@@ -87,7 +86,7 @@ export type RunVerdictChoices = ReadonlyMap<
 >;
 
 // 축마다 "물음 + 상태" 줄의 block_id. 누른 뒤 핸들러가 메시지에서 이 줄만 찾아 상태를 다시 쓴다 —
-// 한 메시지에 실행이 여럿 실리는 주간 카드도 같은 방식으로 갱신된다.
+// 한 메시지에 실행이 여럿 실린 옛 주간 카드(2026-11 제거, 이미 나간 메시지는 남아 있다)도 같은 방식으로 갱신된다.
 const RUN_VERDICT_STATUS_BLOCK_ID_PATTERN = /^run-verdict-status:(\d+):(\w+)$/;
 
 export interface RunVerdictStatusTarget {
@@ -198,97 +197,6 @@ export const buildRunVerdictBlocks = ({
     }),
   );
   return [heading, ...quote, ...facetBlocks];
-};
-
-export interface RunVerdictDigestCardEntry {
-  agentRunId: number;
-  facets: RunVerdictFacet[];
-  // 예: "10/27(화)". 인용은 원문 그대로 받아 여기서 이스케이프한다.
-  dateLabel: string;
-  quote: string;
-}
-
-// 주간 카드 한 통의 블록. 슬랙 메시지 한 통에 싣는 단위다.
-export type RunVerdictDigestPage = SlackBlock[];
-
-// 슬랙 메시지 한 통의 블록 상한은 50 이다. 넘으면 발송 자체가 거부되므로 넘치는 실행은 다음 통으로 넘긴다
-// — 버리면 그 주의 판정 기회가 조용히 사라진다.
-const SLACK_MESSAGE_BLOCK_LIMIT = 50;
-// 머리 한 블록.
-const DIGEST_HEADER_BLOCK_COUNT = 1;
-
-// 날짜·인용 1 + 축마다 물음·버튼 2
-const countEntryBlocks = (entry: RunVerdictDigestCardEntry): number =>
-  1 + entry.facets.length * 2;
-
-const countGroupBlocks = (group: RunVerdictDigestCardEntry[]): number =>
-  group.reduce(
-    (total, entry) => total + countEntryBlocks(entry),
-    DIGEST_HEADER_BLOCK_COUNT,
-  );
-
-// 앞에서부터 채우고, 다음 실행이 상한을 넘기면 새 묶음을 연다.
-const groupDigestEntries = (
-  entries: RunVerdictDigestCardEntry[],
-): RunVerdictDigestCardEntry[][] =>
-  entries.reduce<RunVerdictDigestCardEntry[][]>((groups, entry) => {
-    const last = groups.at(-1);
-    const fits =
-      last !== undefined &&
-      countGroupBlocks(last) + countEntryBlocks(entry) <=
-        SLACK_MESSAGE_BLOCK_LIMIT;
-    if (fits) {
-      last.push(entry);
-      return groups;
-    }
-    return [...groups, [entry]];
-  }, []);
-
-const buildDigestEntryBlocks = (
-  entry: RunVerdictDigestCardEntry,
-): SlackBlock[] => {
-  const quote = formatRunVerdictQuote(
-    entry.quote,
-    getRunVerdictQuoteLabel(entry.facets),
-  );
-  const facetBlocks = entry.facets.flatMap((facet) =>
-    buildRunVerdictFacetBlocks({
-      agentRunId: entry.agentRunId,
-      facet,
-      facets: entry.facets,
-      chosen: [],
-    }),
-  );
-  const dateAndQuote: SlackBlock = {
-    type: 'section',
-    text: { type: 'mrkdwn', text: `*${entry.dateLabel}*\n${quote}` },
-  };
-  return [dateAndQuote, ...facetBlocks];
-};
-
-interface RunVerdictDigestInput {
-  heading: string;
-  entries: RunVerdictDigestCardEntry[];
-}
-
-// 주간 판정 카드 — 축(agentType) 하나에 한 통(넘치면 여러 통). 실행마다 날짜·인용 한 블록, 축마다 물음 + 버튼.
-export const buildRunVerdictDigestPages = ({
-  heading,
-  entries,
-}: RunVerdictDigestInput): RunVerdictDigestPage[] => {
-  const groups = groupDigestEntries(entries);
-  const pageMark = (index: number): string =>
-    groups.length > 1 ? ` (${index + 1}/${groups.length})` : '';
-  return groups.map((group, index) => [
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `*${heading}* — 지난주 판정 안 된 ${entries.length}건, 누른 것만 셉니다.${pageMark(index)}`,
-      },
-    },
-    ...group.flatMap(buildDigestEntryBlocks),
-  ]);
 };
 
 const parseRunVerdictStatusBlockId = (

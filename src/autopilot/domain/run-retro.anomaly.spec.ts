@@ -153,7 +153,7 @@ describe('detectContractScoreAnomalies', () => {
     expect(anomalies[0].agentType).toBe('PAPER_TRADE');
     expect(anomalies[0].kind).toBe('CONTRACT_SCORE');
     expect(anomalies[0].detail).toBe(
-      '형식 준수율 2.3% (171건 평균, 하한 50% · 필수 필드 존재 여부만 검사함) · 품질: 판정 없음',
+      '형식 준수율 2.3% (171건 평균, 하한 50% · 필수 필드 존재 여부만 검사함) · 품질: 표본 부족 (판정 0건, 5건부터 좋음/나쁨 표시)',
     );
     expect(anomalies[0].detail).not.toContain('계약 점수');
   });
@@ -209,21 +209,23 @@ describe('detectContractScoreAnomalies', () => {
     it('판정 5건 미만이면 좋음/나쁨 없이 건수만 싣는다', () => {
       const text = detail([{ agentType: 'PM', total: 4, good: 4, bad: 0 }]);
 
-      expect(text).toContain('품질: 판정 4건 (5건 미만이라 좋음/나쁨 생략)');
+      expect(text).toContain(
+        '품질: 표본 부족 (판정 4건, 5건부터 좋음/나쁨 표시)',
+      );
       expect(text).not.toContain('좋음 4');
     });
 
-    it('그 agentType 의 판정이 없으면 "판정 없음" — 다른 워커 판정을 끌어오지 않는다', () => {
+    it('그 agentType 의 판정이 없으면 0건 표본 부족 — 다른 워커 판정을 끌어오지 않는다', () => {
       expect(
         detail([{ agentType: 'PO_SHADOW', total: 9, good: 9, bad: 0 }]),
-      ).toContain('품질: 판정 없음');
+      ).toContain('품질: 표본 부족 (판정 0건, 5건부터 좋음/나쁨 표시)');
     });
 
-    it('판정 조회가 실패했으면(null) "판정 없음" 이 아니라 조회 실패로 적는다', () => {
+    it('판정 조회가 실패했으면(null) 표본 부족이 아니라 조회 실패로 적는다', () => {
       const text = detail(null);
 
       expect(text).toContain('품질: 판정 조회 실패');
-      expect(text).not.toContain('판정 없음');
+      expect(text).not.toContain('표본 부족');
     });
   });
 });
