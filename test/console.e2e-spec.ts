@@ -95,7 +95,8 @@ describe('ConsoleController (e2e)', () => {
     app = moduleFixture.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     app.useGlobalInterceptors(new ResponseInterceptor());
-    await app.init();
+    // 127.0.0.1 에 직접 띄운다 — supertest 가 `::` 에 띄우면 VS Code 등이 127.0.0.1 로 먼저 잡은 같은 포트로 요청이 새어 404·401·503 이 났다.
+    await app.listen(0, '127.0.0.1');
   });
 
   // beforeEach 가 compile 에서 실패하면 app 이 비어 있다. 그때 close 가 TypeError 를 던지면
@@ -105,7 +106,7 @@ describe('ConsoleController (e2e)', () => {
   });
 
   it('GET /v1/console/snapshot 는 200 + data.agents 배열(레지스트리 전원)', async () => {
-    const response = await request(app.getHttpAdapter().getInstance()).get(
+    const response = await request(app.getHttpServer()).get(
       '/v1/console/snapshot',
     );
 
@@ -117,7 +118,7 @@ describe('ConsoleController (e2e)', () => {
   });
 
   it('GET /v1/console/approvals 는 200 + data 배열', async () => {
-    const response = await request(app.getHttpAdapter().getInstance()).get(
+    const response = await request(app.getHttpServer()).get(
       '/v1/console/approvals',
     );
 
@@ -138,9 +139,9 @@ describe('ConsoleController (e2e)', () => {
       .compile();
 
     const deniedApp = denied.createNestApplication();
-    await deniedApp.init();
+    await deniedApp.listen(0, '127.0.0.1');
     try {
-      const server = deniedApp.getHttpAdapter().getInstance();
+      const server = deniedApp.getHttpServer();
       await request(server).get('/v1/console/snapshot').expect(403);
       await request(server).get('/v1/console/briefing').expect(403);
       await request(server).get('/v1/console/stream').expect(403);

@@ -42,7 +42,8 @@ describe('CrawlerController (e2e)', () => {
     );
     app.useGlobalFilters(new AllExceptionsFilter());
     app.useGlobalInterceptors(new ResponseInterceptor());
-    await app.init();
+    // 127.0.0.1 에 직접 띄운다 — supertest 가 `::` 에 띄우면 VS Code 등이 127.0.0.1 로 먼저 잡은 같은 포트로 요청이 새어 404·401·503 이 났다.
+    await app.listen(0, '127.0.0.1');
   });
 
   afterEach(async () => {
@@ -50,14 +51,14 @@ describe('CrawlerController (e2e)', () => {
   });
 
   it('POST /v1/crawl-jobs — 유효하지 않은 URL은 400을 반환한다', () => {
-    return request(app.getHttpAdapter().getInstance())
+    return request(app.getHttpServer())
       .post('/v1/crawl-jobs')
       .send({ url: 'not-a-url' })
       .expect(400);
   });
 
   it('POST /v1/crawl-jobs — 유효한 요청은 큐 등록 후 성공 응답을 반환한다', async () => {
-    const response = await request(app.getHttpAdapter().getInstance())
+    const response = await request(app.getHttpServer())
       .post('/v1/crawl-jobs')
       .send({ url: 'https://example.com' })
       .expect(201);
@@ -90,9 +91,9 @@ describe('CrawlerController (e2e)', () => {
       .compile();
 
     const deniedApp = denied.createNestApplication();
-    await deniedApp.init();
+    await deniedApp.listen(0, '127.0.0.1');
     try {
-      await request(deniedApp.getHttpAdapter().getInstance())
+      await request(deniedApp.getHttpServer())
         .post('/v1/crawl-jobs')
         .send({ url: 'https://example.com' })
         .expect(403);
