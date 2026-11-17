@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import { DailyTodoEntryInput } from '../domain/daily-todo.type';
+import { DailyTodoEntryInput, STALLED_TURN } from '../domain/daily-todo.type';
 import { displayTitle } from '../domain/display-title';
 import { kstStartOfDay } from '../domain/parse-due-date';
 import {
@@ -253,6 +253,8 @@ export class BuildEveningTodoSummaryUsecase {
       if (
         !item ||
         entry.turn === 'WAITING_OTHERS' ||
+        // 멈춘 일은 오늘 할 일로 고른 게 아니라 보이게 둔 것이라 완료율을 깎지 않는다.
+        entry.turn === STALLED_TURN ||
         item.status === ScheduleStatus.SKIPPED
       ) {
         return false;
@@ -279,7 +281,9 @@ export class BuildEveningTodoSummaryUsecase {
           total: ratioEntries.length,
         }
       : null;
+    // 멈춘 일은 아침에 따로 보였으니 매일 저녁 「못 끝낸 일」로 다시 세지 않는다.
     const remaining = input.entries
+      .filter((entry) => entry.turn !== STALLED_TURN)
       .map((entry) => records.get(entry.scheduleItemId))
       .filter(
         (item): item is ScheduleItemRecord =>

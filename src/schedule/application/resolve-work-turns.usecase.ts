@@ -139,9 +139,15 @@ export class ResolveWorkTurnsUsecase {
           Boolean(signal?.observed),
         )
         .map(classifyAuthorPullRequestTurn);
+      const quiet = describeQuietPullRequest({
+        updatedAts: itemSignals.map((signal) => signal?.updatedAt),
+        minDays: QUIET_PR_DAYS,
+        now,
+      });
       const mine = turns.find((turn) => turn.turn === 'MY_TURN');
       if (mine) {
-        result.set(id, { ...mine, observed: true, wait: null });
+        // 몇 달째 손대지 않은 초안도 내 차례로 잡힌다 — 움직임 없음을 같이 실어 아침이 「멈춘 일」로 가른다.
+        result.set(id, { ...mine, observed: true, wait: quiet });
         continue;
       }
       if (itemSignals.some((signal) => !signal || !signal.observed)) {
@@ -163,11 +169,6 @@ export class ResolveWorkTurnsUsecase {
           wait,
         });
       } else {
-        const quiet = describeQuietPullRequest({
-          updatedAts: itemSignals.map((signal) => signal?.updatedAt),
-          minDays: QUIET_PR_DAYS,
-          now,
-        });
         result.set(id, { ...unknown(true), wait: quiet });
       }
     }

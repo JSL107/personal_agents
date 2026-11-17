@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
-import { DailyTodoEntryInput } from '../domain/daily-todo.type';
+import { DailyTodoEntryInput, STALLED_TURN } from '../domain/daily-todo.type';
 import { displayTitle } from '../domain/display-title';
 import {
   DAILY_TODO_REPOSITORY_PORT,
@@ -10,7 +11,11 @@ import {
   SCHEDULE_REPOSITORY_PORT,
   ScheduleRepositoryPort,
 } from '../domain/port/schedule.repository.port';
-import { ScheduleItemRecord, ScheduleStatus } from '../domain/schedule.type';
+import {
+  ScheduleItemRecord,
+  ScheduleSource,
+  ScheduleStatus,
+} from '../domain/schedule.type';
 import { countTrackedDays } from '../domain/tracked-day-count';
 import { ReconcilePullRequestsUsecase } from './reconcile-pull-requests.usecase';
 import {
@@ -28,7 +33,12 @@ export interface MorningTodoSections {
   loadFailed: boolean;
   today: MorningTodoLine[];
   waiting: MorningTodoLine[];
+  // 오래 움직임 없는 내 PR. 닫지 않고 보이게만 둔다.
+  stalled: MorningTodoLine[];
+  // 노션 상태가 진행 중인 카드와 노션 외 항목. 상태를 아직 모르는 노션 카드도 숨기지 않고 여기 둔다.
   unstarted: MorningTodoLine[];
+  // 노션 상태가 진행 중이 아닌(시작 전·보류 등) 카드 수. 제목 대신 건수만 싣는다.
+  backlogCount: number;
 }
 interface BuildInput {
   ownerId: string | null;
@@ -54,8 +64,12 @@ const failed = (): MorningTodoSections => ({
   loadFailed: true,
   today: [],
   waiting: [],
+  stalled: [],
   unstarted: [],
+  backlogCount: 0,
 });
+// shortcut: 세 DB 의 진행 중 값을 기본값으로 박았다 — 상태값 이름이 바뀌면 env 로 덮는다.
+const DEFAULT_ACTIVE_VALUES = ['진행 중', '진행중', '테스트'];
 const compare = (left: RankedItem, right: RankedItem): number =>
   right.dayCount - left.dayCount || left.item.id - right.item.id;
 const line = ({ item, resolved, dayCount }: RankedItem): MorningTodoLine => ({
@@ -69,6 +83,15 @@ const line = ({ item, resolved, dayCount }: RankedItem): MorningTodoLine => ({
         ? resolved.reason
         : (resolved.wait?.label ?? null),
 });
+const stalledLine = (ranked: RankedItem): MorningTodoLine => ({
+  ...line(ranked),
+  detail:
+    [ranked.resolved.reason, ranked.resolved.wait?.label]
+      .filter(Boolean)
+      .join(', ') || null,
+});
+const isStalled = ({ resolved }: RankedItem): boolean =>
+  resolved.turn !== 'WAITING_OTHERS' && resolved.wait !== null;
 
 @Injectable()
 export class BuildMorningTodosUsecase {
@@ -80,6 +103,7 @@ export class BuildMorningTodosUsecase {
     private readonly repository: ScheduleRepositoryPort,
     @Inject(DAILY_TODO_REPOSITORY_PORT)
     private readonly dailyTodoRepository: DailyTodoRepositoryPort,
+    private readonly config: ConfigService,
   ) {}
 
   async reconcileBeforeListing({
@@ -174,39 +198,67 @@ export class BuildMorningTodosUsecase {
           dayCount: countTrackedDays({ item, now }),
         }),
       );
-      const mine = ranked
+      const stalled = ranked.filter(isStalled).sort(compare);
+      const moving = ranked.filter((entry) => !isStalled(entry));
+      const mine = moving
         .filter((entry) => entry.resolved.turn === 'MY_TURN')
         .sort(compare);
-      const unknown = ranked
+      const unknown = moving
         .filter((entry) => entry.resolved.turn === 'UNKNOWN')
         .sort(compare);
-      const waiting = ranked
+      const waiting = moving
         .filter((entry) => entry.resolved.turn === 'WAITING_OTHERS')
         .sort(compare);
-      const ordered = [...mine, ...unknown, ...waiting];
-      const entries = ordered.map(({ item, resolved: turn }, position) => ({
-        scheduleItemId: item.id,
-        turn: turn.turn,
-        observed: turn.observed,
-        position,
-      }));
+      // 저녁 회고가 이 순서·turn 으로 완료율을 센다 — 멈춘 일은 STALLED 로 남겨 분모에서 뺀다.
+      const entries = [
+        ...[...mine, ...unknown, ...waiting].map(({ item, resolved }) => ({
+          scheduleItemId: item.id,
+          turn: resolved.turn,
+          observed: resolved.observed,
+        })),
+        ...stalled.map(({ item, resolved }) => ({
+          scheduleItemId: item.id,
+          turn: STALLED_TURN,
+          observed: resolved.observed,
+        })),
+      ].map((entry, position) => ({ ...entry, position }));
+      const activeValues = this.readActiveValues();
+      const opened = items.filter(
+        (item) => item.status === ScheduleStatus.OPEN,
+      );
+      const isBacklog = (item: ScheduleItemRecord): boolean =>
+        item.source === ScheduleSource.NOTION_TASK &&
+        typeof item.sourceStatus === 'string' &&
+        !activeValues.includes(item.sourceStatus);
       const sections: MorningTodoSections = {
         loadFailed: false,
         today: [...mine, ...unknown].map(line),
         waiting: waiting.map(line),
-        unstarted: items
-          .filter((item) => item.status === ScheduleStatus.OPEN)
+        stalled: stalled.map(stalledLine),
+        unstarted: opened
+          .filter((item) => !isBacklog(item))
           .map((item) => ({
             title: displayTitle(item),
             url: item.sourceUrl ?? item.linkUrl,
             dayCount: countTrackedDays({ item, now }),
             detail: null,
           })),
+        backlogCount: opened.filter(isBacklog).length,
       };
       return { sections, entries };
     } catch (error) {
       this.logger.warn(`오늘 할 일 조회 실패: ${String(error)}`);
       return null;
     }
+  }
+
+  private readActiveValues(): string[] {
+    const values = (
+      this.config.get<string>('SCHEDULE_NOTION_ACTIVE_VALUES') ?? ''
+    )
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    return values.length > 0 ? values : DEFAULT_ACTIVE_VALUES;
   }
 }

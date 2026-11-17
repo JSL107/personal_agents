@@ -496,6 +496,10 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  SCHEDULE_NOTION_ACTIVE_VALUES?: string;
+
+  @IsOptional()
+  @IsString()
   SCHEDULE_NOTION_DUE_PROPERTY?: string;
 
   @IsOptional()

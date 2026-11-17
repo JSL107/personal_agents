@@ -19,6 +19,7 @@ describe('ScheduleCollectNotionAutopilotTask', () => {
     findBySourceKey: jest.fn(),
     createCollected: jest.fn(),
     updateSourceWorkspace: jest.fn(),
+    updateSourceStatus: jest.fn(),
     addEvent: jest.fn(),
     findDetail: jest.fn(),
     recordEventAndTransition: jest.fn(),
@@ -151,6 +152,37 @@ describe('ScheduleCollectNotionAutopilotTask', () => {
     });
     await task.run();
     expect(repository.updateSourceWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('새 업무는 판정한 상태값을 함께 저장하고, 기존 업무는 값이 바뀔 때만 갱신한다', async () => {
+    await task.run();
+    expect(repository.createCollected).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceStatus: '진행중' }),
+    );
+
+    repository.findBySourceKey.mockResolvedValue({
+      id: 17,
+      title: '결제 업무',
+      dueDate: new Date('2026-11-10T00:00:00Z'),
+      sourceWorkspace: NotionWorkspace.PERSONAL,
+      sourceStatus: '시작 전',
+    });
+    await task.run();
+    expect(repository.updateSourceStatus).toHaveBeenCalledWith({
+      id: 17,
+      sourceStatus: '진행중',
+    });
+
+    repository.updateSourceStatus.mockClear();
+    repository.findBySourceKey.mockResolvedValue({
+      id: 17,
+      title: '결제 업무',
+      dueDate: new Date('2026-11-10T00:00:00Z'),
+      sourceWorkspace: NotionWorkspace.PERSONAL,
+      sourceStatus: '진행중',
+    });
+    await task.run();
+    expect(repository.updateSourceStatus).not.toHaveBeenCalled();
   });
 
   it('새 업무는 워크스페이스와 함께 만든다', async () => {

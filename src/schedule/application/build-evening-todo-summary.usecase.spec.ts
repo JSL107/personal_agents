@@ -173,6 +173,40 @@ describe('BuildEveningTodoSummaryUsecase', () => {
     expect(result.notDone).toEqual([]);
   });
 
+  it('멈춘 일(STALLED)은 분모와 못 끝낸 일에서 빠지고, 그날 끝나면 아침 목록 안 완료로 남는다', async () => {
+    const { usecase, repository, dailyTodoRepository } = createDeps();
+    const records = [
+      item(1, '오늘 할 일', ScheduleStatus.DONE, { completedAt: now }),
+      item(2, '남은 일', ScheduleStatus.IN_PROGRESS),
+      item(3, '멈췄다 머지된 초안', ScheduleStatus.DONE, { completedAt: now }),
+      item(4, '여전히 멈춘 초안', ScheduleStatus.IN_PROGRESS),
+    ];
+    repository.findCompletedBetween.mockResolvedValue([records[0], records[2]]);
+    repository.findById.mockImplementation(async (id: number) =>
+      records.find((record) => record.id === id),
+    );
+    dailyTodoRepository.findForDate.mockResolvedValue({
+      status: 'LISTED',
+      entries: records.map((record, position) => ({
+        scheduleItemId: record.id,
+        turn: position < 2 ? 'MY_TURN' : 'STALLED',
+        observed: true,
+        position,
+      })),
+    });
+
+    const result = await usecase.execute(input);
+
+    expect(result.ratio).toEqual({ done: 1, total: 2 });
+    expect(result.notDone.map((line) => line.title)).toEqual(['남은 일']);
+    expect(
+      result.done.map((line) => [line.title, line.outsideMorningList]),
+    ).toEqual([
+      ['오늘 할 일', false],
+      ['멈췄다 머지된 초안', false],
+    ]);
+  });
+
   it('waiting line uses 이상 when unobserved', async () => {
     const { usecase, repository, dailyTodoRepository, resolve } = createDeps();
     repository.findById.mockResolvedValue(
