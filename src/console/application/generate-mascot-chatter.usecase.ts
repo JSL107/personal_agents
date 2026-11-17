@@ -74,6 +74,7 @@ interface PendingChatter {
   chatterId: string;
   line: string;
   todoLines: string[];
+  candidates: readonly WorkSuggestion[];
   conversationKey: string | null;
   createdAtMs: number;
 }
@@ -147,9 +148,10 @@ export class GenerateMascotChatterUsecase {
     try {
       await this.conversationMemory.appendTurn(pending.conversationKey, {
         role: 'assistant',
-        text: withTodoSource({
+        text: withChatterSource({
           line: pending.line,
           todoLines: pending.todoLines,
+          candidates: pending.candidates,
         }),
         agentType: null,
         agentRunId: null,
@@ -188,7 +190,7 @@ export class GenerateMascotChatterUsecase {
           '[최근 대화]',
           ...context.turns.map(
             (turn) =>
-              `${turn.role === 'assistant' ? '우사기' : '사용자'}: ${turn.text.slice(0, MEMORY_TEXT_MAX_LENGTH)}`,
+              `${turn.role === 'assistant' ? '우사기' : '사용자'}: ${stripChatterSource(turn.text).slice(0, MEMORY_TEXT_MAX_LENGTH)}`,
           ),
           '[제안 후보]',
           ...context.candidates.map(
@@ -266,6 +268,7 @@ export class GenerateMascotChatterUsecase {
       chatterId,
       line,
       todoLines: context.todoLines,
+      candidates: context.candidates,
       conversationKey: context.conversationKey,
       createdAtMs: Date.now(),
     };
@@ -379,7 +382,6 @@ export class GenerateMascotChatterUsecase {
         })
       : null;
     let todoLines: string[] = [];
-    let turns: ConversationTurn[] = [];
     let candidates: readonly WorkSuggestion[] = [];
     try {
       const briefing = await this.buildBriefing.execute();
@@ -387,14 +389,12 @@ export class GenerateMascotChatterUsecase {
     } catch (error) {
       this.logger.warn(`우사기 브리핑 조회 실패: ${String(error)}`);
     }
-    if (conversationKey) {
-      try {
-        turns = (
-          await this.conversationMemory.getRecentTurns(conversationKey)
-        ).slice(-MEMORY_TURN_LIMIT);
-      } catch (error) {
-        this.logger.warn(`우사기 대화 기억 조회 실패: ${String(error)}`);
-      }
+    const recentTurns = conversationKey
+      ? await this.readRecentTurns(conversationKey)
+      : [];
+    const turns = recentTurns.slice(-MEMORY_TURN_LIMIT);
+    if (hasSuggestionSinceLastUserTurn(recentTurns)) {
+      return { conversationKey, todoLines, turns, candidates };
     }
     try {
       const result = await this.suggestNextWork.execute();
@@ -406,6 +406,17 @@ export class GenerateMascotChatterUsecase {
       this.logger.warn(`우사기 제안 조회 실패: ${String(error)}`);
     }
     return { conversationKey, todoLines, turns, candidates };
+  }
+
+  private async readRecentTurns(
+    conversationKey: string,
+  ): Promise<ConversationTurn[]> {
+    try {
+      return await this.conversationMemory.getRecentTurns(conversationKey);
+    } catch (error) {
+      this.logger.warn(`우사기 대화 기억 조회 실패: ${String(error)}`);
+      return [];
+    }
   }
 
   private failure(
@@ -437,16 +448,64 @@ const formatTodoLine = (todo: ConsoleTodo): string => {
   return `${todo.kind}: ${todo.label}${detail}${targets}`;
 };
 
-// 우사기 한 마디는 할 일을 보고 만든 문장인데 문장만 기억하면, 사용자가 "지금 무슨 말이야?" 라고 되물을 때
-// 대화 답변이 그 출처를 몰라 "설명 없이 반복했어" 로 사과만 한다(2026-11-06 run 11773). 실제로 고른 근거라는
-// 보장은 없으므로 "본 할 일" 로만 적는다. 기억은 화면에 다시 보이지 않고 프롬프트에만 쓰인다.
-const withTodoSource = ({
+const CHATTER_SOURCE_PREFIX = '[이 한 마디를 만들 때 본 ';
+const CANDIDATE_SOURCE_LABEL = '이 한 마디를 만들 때 본 제안 후보';
+
+// 우사기 한 마디는 할 일·제안 후보를 보고 만든 문장인데 문장만 기억하면, 사용자가 "무슨 말이야?" 라고 되물을 때
+// 대화 답변이 그 출처를 몰라 사과만 한다(2026-11-06 run 11773 할 일, 2026-11-17 "32일째인 Art Job Feed" 제안).
+// 실제로 고른 근거라는 보장은 없으므로 "본 할 일·본 제안 후보" 로만 적는다. 모델은 index 없이 문장으로만 후보를
+// 꺼내기도 해서 고른 후보만 남기면 빠진다. 기억은 화면에 다시 보이지 않고 프롬프트에만 쓰인다.
+const withChatterSource = ({
   line,
   todoLines,
+  candidates,
 }: {
   line: string;
   todoLines: readonly string[];
-}): string =>
-  todoLines.length > 0
-    ? `${line}\n[이 한 마디를 만들 때 본 할 일: ${todoLines.join(' / ')}]`
-    : line;
+  candidates: readonly WorkSuggestion[];
+}): string => {
+  const sources = [line];
+  if (todoLines.length > 0) {
+    sources.push(`[이 한 마디를 만들 때 본 할 일: ${todoLines.join(' / ')}]`);
+  }
+  if (candidates.length > 0) {
+    const candidateLines = candidates.map(
+      (candidate) =>
+        `${candidate.displayName}(${candidate.agentType}) — ${candidate.reason}`,
+    );
+    sources.push(`[${CANDIDATE_SOURCE_LABEL}: ${candidateLines.join(' / ')}]`);
+  }
+  const memoryText = sources.join('\n');
+  return memoryText;
+};
+
+// 출처 꼬리표는 대화 답변이 "무슨 말이야?" 에 답하라고 남긴 것이다. 우사기 자신의 [최근 대화]에 다시 실으면
+// 후보를 비워도 지난 꼬리표에서 같은 제안을 다시 꺼낸다.
+const stripChatterSource = (text: string): string => {
+  const spokenLines = text
+    .split('\n')
+    .filter((textLine) => !textLine.startsWith(CHATTER_SOURCE_PREFIX));
+  const spokenText = spokenLines.join('\n');
+  return spokenText;
+};
+
+// 사용자가 답하기 전에 우사기가 제안 후보를 본 한 마디를 이미 했으면 이번엔 후보를 싣지 않는다. 직전 발화가
+// [최근 대화]로 들어가 "~얘기는 했으니 ~도 볼까?" 로 제안을 하나씩 이어 붙였다(2026-11-17 콘솔).
+// shortcut: 대화 기억(30분·5턴)과 표시 확인에 기대는 best-effort 억제다. 후보를 보고도 제안하지 않은 한 마디나
+// 문장 없는 제안 수락(user 턴이 남지 않음)도 억제 쪽으로 센다. 엄격한 보장이 필요하면 제안 표시·응답 상태를 따로 둔다.
+const hasSuggestionSinceLastUserTurn = (
+  turns: readonly ConversationTurn[],
+): boolean => {
+  const lastUserIndex = turns.map((turn) => turn.role).lastIndexOf('user');
+  const sinceUser = turns.slice(lastUserIndex + 1);
+  const suggested = sinceUser.some(isCandidateSourceTurn);
+  return suggested;
+};
+
+const isCandidateSourceTurn = (turn: ConversationTurn): boolean => {
+  if (turn.role !== 'assistant') {
+    return false;
+  }
+  const hasCandidateSource = turn.text.includes(`[${CANDIDATE_SOURCE_LABEL}:`);
+  return hasCandidateSource;
+};

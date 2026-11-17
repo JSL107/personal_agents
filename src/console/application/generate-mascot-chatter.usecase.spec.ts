@@ -35,6 +35,8 @@ const SECOND_SUGGESTION = {
   reason: '검토할 PR이 남음',
 };
 
+const CANDIDATE_SOURCE = `[이 한 마디를 만들 때 본 제안 후보: PM(PM) — 오늘 계획을 세울 차례 / 코드 리뷰어(CODE_REVIEWER) — 검토할 PR이 남음]`;
+
 const completion = (text: string): CompletionResponse => ({
   text,
   modelUsed: 'test-model',
@@ -141,7 +143,7 @@ describe('GenerateMascotChatterUsecase', () => {
     expect(await usecase.confirmShown(result.chatterId!)).toBe(true);
     expect(memory.appendTurn).toHaveBeenCalledWith(MEMORY_KEY, {
       role: 'assistant',
-      text: '오늘 할 일을 살펴볼까?\n[이 한 마디를 만들 때 본 할 일: APPROVAL: 승인 1건]',
+      text: `오늘 할 일을 살펴볼까?\n[이 한 마디를 만들 때 본 할 일: APPROVAL: 승인 1건]\n${CANDIDATE_SOURCE}`,
       agentType: null,
       agentRunId: null,
       timestampMs: expect.any(Number),
@@ -188,7 +190,7 @@ describe('GenerateMascotChatterUsecase', () => {
       MEMORY_KEY,
       expect.objectContaining({
         role: 'assistant',
-        text: `PR #3668 할 일 있어\n[이 한 마디를 만들 때 본 할 일: ${sourceLine}]`,
+        text: `PR #3668 할 일 있어\n[이 한 마디를 만들 때 본 할 일: ${sourceLine}]\n${CANDIDATE_SOURCE}`,
       }),
     );
   });
@@ -226,8 +228,13 @@ describe('GenerateMascotChatterUsecase', () => {
     );
   });
 
-  it('할 일이 없을 때 만든 한 마디는 문장만 기억한다', async () => {
+  it('할 일·제안 후보가 없을 때 만든 한 마디는 문장만 기억한다', async () => {
     briefing.execute.mockResolvedValue({ todos: [] });
+    suggestions.execute.mockResolvedValue({
+      suggestions: [],
+      skippedUnknownCycle: 0,
+      alsoDueCount: 0,
+    });
 
     const result = await usecase.execute({
       declinedAgentTypes: [],
@@ -239,6 +246,97 @@ describe('GenerateMascotChatterUsecase', () => {
       MEMORY_KEY,
       expect.objectContaining({ text: '오늘 할 일을 살펴볼까?' }),
     );
+  });
+
+  // 2026-11-17 콘솔 — 사용자 답 없이 "Delay Report도 볼까?" → "32일째인 Art Job Feed도 볼까?" 로 제안을 이어
+  // 붙였고, "무슨말이야?" 에는 '32일째' 의 출처를 몰라 사과만 했다.
+  describe('제안 후보 근거와 연속 제안', () => {
+    const ART_JOB_FEED_SUGGESTION = {
+      agentType: AgentType.ART_JOB_FEED,
+      displayName: 'Art Job Feed',
+      reason: '32일째 안 했어요 (보통 1일마다 하던 일)',
+    };
+    const promptOf = (callIndex: number): string =>
+      (
+        modelRouter.route.mock.calls[callIndex] as [
+          { request: { prompt: string } },
+        ]
+      )[0].request.prompt;
+
+    beforeEach(() => {
+      briefing.execute.mockResolvedValue({ todos: [] });
+      suggestions.execute.mockResolvedValue({
+        suggestions: [ART_JOB_FEED_SUGGESTION],
+        skippedUnknownCycle: 0,
+        alsoDueCount: 0,
+      });
+      modelRouter.route.mockResolvedValue(
+        completion(
+          '{"line":"32일째인 Art Job Feed도 볼까?","suggestionIndex":null,"asks":true}',
+        ),
+      );
+    });
+
+    it('문장으로만 꺼낸 후보도 이름과 사유를 기억해 되물으면 답할 수 있게 한다', async () => {
+      const result = await usecase.execute({
+        declinedAgentTypes: [],
+        trigger: 'IDLE',
+      });
+      await usecase.confirmShown(result.chatterId!);
+
+      const [, turn] = memory.appendTurn.mock.calls[0] as [
+        string,
+        { text: string },
+      ];
+      expect(turn.text).toBe(
+        '32일째인 Art Job Feed도 볼까?\n[이 한 마디를 만들 때 본 제안 후보: Art Job Feed(ART_JOB_FEED) — 32일째 안 했어요 (보통 1일마다 하던 일)]',
+      );
+    });
+
+    it('사용자 답 없이 후보를 본 한 마디가 이미 있으면 다음 한 마디에는 후보를 싣지 않는다', async () => {
+      const first = await usecase.execute({
+        declinedAgentTypes: [],
+        trigger: 'IDLE',
+      });
+      await usecase.confirmShown(first.chatterId!);
+      const [, firstTurn] = memory.appendTurn.mock.calls[0] as [
+        string,
+        { text: string },
+      ];
+      memory.getRecentTurns.mockResolvedValue([
+        { role: 'user', text: '오늘 뭐 해?', timestampMs: 1 },
+        { role: 'assistant', text: firstTurn.text, timestampMs: 2 },
+      ]);
+      modelRouter.route.mockResolvedValue(
+        completion('{"line":"오늘도 힘내","suggestionIndex":1,"asks":false}'),
+      );
+
+      const second = await usecase.execute({
+        declinedAgentTypes: [],
+        trigger: 'IDLE',
+      });
+
+      expect(promptOf(0)).toContain('Art Job Feed (ART_JOB_FEED)');
+      expect(promptOf(1)).not.toContain('ART_JOB_FEED');
+      expect(suggestions.execute).toHaveBeenCalledTimes(1);
+      expect(second.suggestion).toBeNull();
+    });
+
+    it('사용자가 그 뒤에 답했으면 다시 후보를 싣는다', async () => {
+      memory.getRecentTurns.mockResolvedValue([
+        {
+          role: 'assistant',
+          text: '리뷰 볼까?\n[이 한 마디를 만들 때 본 제안 후보: PM(PM) — 오늘 계획을 세울 차례]',
+          timestampMs: 1,
+        },
+        { role: 'user', text: '무슨말이야?', timestampMs: 2 },
+        { role: 'assistant', text: '내가 헷갈리게 말했어.', timestampMs: 3 },
+      ]);
+
+      await usecase.execute({ declinedAgentTypes: [], trigger: 'IDLE' });
+
+      expect(promptOf(0)).toContain('Art Job Feed (ART_JOB_FEED)');
+    });
   });
 
   it('코드펜스와 앞뒤 설명이 섞인 JSON도 추출한다', async () => {
