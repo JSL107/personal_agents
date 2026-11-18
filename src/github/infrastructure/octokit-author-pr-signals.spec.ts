@@ -162,11 +162,12 @@ describe('내 마지막 활동 시각', () => {
         users: {
           getAuthenticated: jest
             .fn()
-            .mockResolvedValue({ data: { login: 'me' } }),
+            .mockResolvedValue({ data: { login: 'token-owner' } }),
         },
         pulls: {
           get: jest.fn().mockResolvedValue({
             data: {
+              user: { login: 'me' },
               state: 'open',
               draft: false,
               mergeable_state: 'clean',

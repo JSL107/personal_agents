@@ -3,6 +3,7 @@ import { Octokit } from '@octokit/rest';
 
 import { appendIntegrationHint } from '../../common/domain/integration-failure-hint';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { pickLatestDateTime } from '../../common/util/date.util';
 import { isSecretFilePath } from '../../common/util/secret-file.util';
 import {
   AUTHOR_PR_SIGNAL_MAX,
@@ -148,28 +149,34 @@ interface GraphqlPageInfo {
   hasNextPage: boolean;
 }
 
+// AUTHOR_TIMELINE_QUERY 의 timelineItems 노드. 코멘트는 author, draft 전환은 actor 로 행위자가 온다.
+interface AuthorTimelineGraphqlNode {
+  createdAt?: string;
+  author?: { login: string } | null;
+  actor?: { login: string } | null;
+}
+
 interface AuthorTimelineGraphqlResponse {
   repository: {
     pullRequest: {
       timelineItems: {
-        nodes: Array<{
-          createdAt?: string;
-          author?: { login: string } | null;
-          actor?: { login: string } | null;
-        }>;
+        nodes: AuthorTimelineGraphqlNode[];
         pageInfo: { hasPreviousPage: boolean };
       };
     };
   };
 }
 
+// GitHub REST `GET /repos/{owner}/{repo}/activity` 응답 항목 본뜸 — 판정에 쓰는 필드만.
 interface RepositoryActivity {
   timestamp: string;
   activity_type: string;
 }
 
+// Octokit `pulls.get` 응답 본뜸 — 활동 시각 판정에 쓰는 필드만.
 interface AuthoredPullRequest {
   created_at: string;
+  user: { login: string } | null;
   head: { ref: string; repo: { full_name: string } | null };
 }
 
@@ -1503,7 +1510,8 @@ export class OctokitGithubClient implements GithubClientPort {
     try {
       const { created_at: createdAt, head } = pullRequest;
       const headRepo = head.repo?.full_name;
-      const login = await this.resolveLogin();
+      // 토큰 계정이 아니라 PR 작성자 — 수집 대상(IMPACT_REPORT_GITHUB_AUTHOR)의 PR 이라 이쪽이 「나」다.
+      const login = pullRequest.user?.login;
       if (!login || !headRepo) {
         return undefined;
       }
@@ -1543,11 +1551,12 @@ export class OctokitGithubClient implements GithubClientPort {
       const reviewDates = reviews
         .filter((review) => review.user?.login === login)
         .map((review) => review.submitted_at ?? createdAt);
-      const dates = [createdAt, ...pushes, ...timelineDates, ...reviewDates];
-      const latest = dates.reduce((found, date) =>
-        Date.parse(date) > Date.parse(found) ? date : found,
-      );
-      return latest;
+      return pickLatestDateTime([
+        createdAt,
+        ...pushes,
+        ...timelineDates,
+        ...reviewDates,
+      ]);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
