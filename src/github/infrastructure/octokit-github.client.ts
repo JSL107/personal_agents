@@ -124,8 +124,53 @@ const RESOLVE_REVIEW_THREAD_MUTATION = `
   }
 `;
 
+// 「내 활동」 중 리뷰·push 를 뺀 나머지. cross-reference·라벨·멘션은 남의 맥락이라 아예 받지 않는다.
+const AUTHOR_TIMELINE_QUERY = `
+  query($owner:String!, $name:String!, $number:Int!) {
+    repository(owner:$owner, name:$name) {
+      pullRequest(number:$number) {
+        timelineItems(last:100, itemTypes:[ISSUE_COMMENT, READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT]) {
+          nodes {
+            ... on IssueComment { createdAt author { login } }
+            ... on ReadyForReviewEvent { createdAt actor { login } }
+            ... on ConvertToDraftEvent { createdAt actor { login } }
+          }
+          pageInfo { hasPreviousPage }
+        }
+      }
+    }
+  }
+`;
+const ACTIVITY_PAGE_SIZE = 100;
+const PUSH_ACTIVITY_TYPES = new Set(['push', 'force_push']);
+
 interface GraphqlPageInfo {
   hasNextPage: boolean;
+}
+
+interface AuthorTimelineGraphqlResponse {
+  repository: {
+    pullRequest: {
+      timelineItems: {
+        nodes: Array<{
+          createdAt?: string;
+          author?: { login: string } | null;
+          actor?: { login: string } | null;
+        }>;
+        pageInfo: { hasPreviousPage: boolean };
+      };
+    };
+  };
+}
+
+interface RepositoryActivity {
+  timestamp: string;
+  activity_type: string;
+}
+
+interface AuthoredPullRequest {
+  created_at: string;
+  head: { ref: string; repo: { full_name: string } | null };
 }
 
 interface ReviewThreadGraphqlReaction {
@@ -1430,7 +1475,11 @@ export class OctokitGithubClient implements GithubClientPort {
         ],
         changesRequestedBy,
         observed: true,
-        updatedAt: detail.data.updated_at,
+        lastAuthorActivityAt: await this.fetchLastAuthorActivityAt({
+          ref,
+          pullRequest: detail.data,
+          reviews: humans,
+        }),
       };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1438,6 +1487,73 @@ export class OctokitGithubClient implements GithubClientPort {
         `PR ${ref.repo}#${ref.number} 차례 신호 조회 실패 — 미관측으로 둔다: ${message}`,
       );
       return neutral;
+    }
+  }
+
+  // 내 push·리뷰(스레드 답글 포함)·PR 코멘트·draft 전환과 PR 생성 중 가장 늦은 시각. 모르면 undefined 로 판정을 보류한다.
+  private async fetchLastAuthorActivityAt({
+    ref,
+    pullRequest,
+    reviews,
+  }: {
+    ref: PullRequestRef;
+    pullRequest: AuthoredPullRequest;
+    reviews: PullsReview[];
+  }): Promise<string | undefined> {
+    try {
+      const { created_at: createdAt, head } = pullRequest;
+      const headRepo = head.repo?.full_name;
+      const login = await this.resolveLogin();
+      if (!login || !headRepo) {
+        return undefined;
+      }
+      const octokit = this.requireOctokit();
+      const [owner, repo] = parseRepo(ref.repo);
+      const [headOwner, headName] = parseRepo(headRepo);
+      const [activities, timeline] = await Promise.all([
+        octokit.request('GET /repos/{owner}/{repo}/activity', {
+          owner: headOwner,
+          repo: headName,
+          ref: `refs/heads/${head.ref}`,
+          actor: login,
+          per_page: ACTIVITY_PAGE_SIZE,
+        }),
+        octokit.graphql<AuthorTimelineGraphqlResponse>(AUTHOR_TIMELINE_QUERY, {
+          owner,
+          name: repo,
+          number: ref.number,
+        }),
+      ]);
+      const activityItems = activities.data as RepositoryActivity[];
+      const pushes = activityItems
+        .filter((activity) => PUSH_ACTIVITY_TYPES.has(activity.activity_type))
+        .map((activity) => activity.timestamp);
+      const { nodes, pageInfo } = timeline.repository.pullRequest.timelineItems;
+      const timelineDates = nodes
+        .filter((node) => (node.author?.login ?? node.actor?.login) === login)
+        .map((node) => node.createdAt ?? createdAt);
+      // 받은 범위에 내 흔적이 없는데 더 오래된 기록이 남아 있으면 그 안에 내 활동이 있을 수 있다.
+      const pushesCut =
+        pushes.length === 0 && activityItems.length === ACTIVITY_PAGE_SIZE;
+      const timelineCut =
+        timelineDates.length === 0 && pageInfo.hasPreviousPage;
+      if (pushesCut || timelineCut) {
+        return undefined;
+      }
+      const reviewDates = reviews
+        .filter((review) => review.user?.login === login)
+        .map((review) => review.submitted_at ?? createdAt);
+      const dates = [createdAt, ...pushes, ...timelineDates, ...reviewDates];
+      const latest = dates.reduce((found, date) =>
+        Date.parse(date) > Date.parse(found) ? date : found,
+      );
+      return latest;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `PR ${ref.repo}#${ref.number} 내 활동 시각 조회 실패 — 멈춤 판정을 보류한다: ${message}`,
+      );
+      return undefined;
     }
   }
 
