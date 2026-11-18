@@ -293,7 +293,7 @@ describe('ResolveWorkTurnsUsecase', () => {
   });
   it('리뷰어 없는 PR 이 14일 이상 움직임이 없으면 UNKNOWN 에 일수 라벨을 붙인다', async () => {
     github.fetchAuthorPullRequestSignals.mockResolvedValue([
-      signal(1, { updatedAt: '2026-10-21T03:00:00Z' }),
+      signal(1, { lastAuthorActivityAt: '2026-10-21T03:00:00Z' }),
     ]);
     const result = await usecase.execute({
       items: [
@@ -313,7 +313,7 @@ describe('ResolveWorkTurnsUsecase', () => {
   });
   it('14일 이상 움직임 없는 초안도 MY_TURN 에 일수 라벨을 붙인다', async () => {
     github.fetchAuthorPullRequestSignals.mockResolvedValue([
-      signal(1, { draft: true, updatedAt: '2026-10-21T03:00:00Z' }),
+      signal(1, { draft: true, lastAuthorActivityAt: '2026-10-21T03:00:00Z' }),
     ]);
     const result = await usecase.execute({
       items: [
@@ -336,8 +336,8 @@ describe('ResolveWorkTurnsUsecase', () => {
       new Map([[2, [url(2), url(3)]]]),
     );
     github.fetchAuthorPullRequestSignals.mockResolvedValue([
-      signal(1, { updatedAt: '2026-10-22T03:00:00Z' }),
-      signal(2, { updatedAt: '2026-09-01T03:00:00Z' }),
+      signal(1, { lastAuthorActivityAt: '2026-10-22T03:00:00Z' }),
+      signal(2, { lastAuthorActivityAt: '2026-09-01T03:00:00Z' }),
       signal(3),
     ]);
     const result = await usecase.execute({
