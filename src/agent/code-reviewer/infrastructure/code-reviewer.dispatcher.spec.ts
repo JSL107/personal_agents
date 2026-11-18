@@ -353,7 +353,7 @@ describe('CodeReviewerDispatcher', () => {
       await expect(rejected).rejects.not.toThrow('/review-pr');
     });
 
-    it('게시 결과를 리뷰 본문 아래 한 줄로 붙인다', async () => {
+    it('게시 결과를 리뷰 본문 위 첫 줄로 둔다', async () => {
       const { dispatcher, reviewPullRequestExecute } = makeFixture();
       reviewPullRequestExecute.mockResolvedValueOnce({
         result: review,
@@ -370,7 +370,7 @@ describe('CodeReviewerDispatcher', () => {
         text: `${PR_282_LINK} 리뷰해줘`,
       });
 
-      expect(outcome.formattedText).toContain(
+      expect(outcome.formattedText.split('\n')[0]).toContain(
         'GitHub 게시 대상에 등록되지 않았어요',
       );
       expect(outcome.formattedText).not.toContain('PR_REVIEW_INLINE_REPOS');

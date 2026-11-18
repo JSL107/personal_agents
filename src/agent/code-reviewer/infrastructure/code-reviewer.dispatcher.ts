@@ -86,15 +86,17 @@ export class CodeReviewerDispatcher implements AgentDispatcher {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
+      // 게시 결과를 맨 위에 둔다. 콘솔 말풍선·대화 기록은 첫 줄만 보여 줘서, 끝에 두면 매번
+      // 리뷰 제목만 보이고 "리뷰를 안 달았다" 로 읽혀 재요청 → 같은 지적 중복 게시가 났다(2026-11-18 #5928).
       formattedText: [
+        ...(outcome.publication !== undefined
+          ? [formatPullRequestPublication(outcome.publication), '']
+          : []),
         formatPullRequestReviewResponse({
           prRef,
           prTitle: outcome.prTitle,
           review: outcome.result,
         }),
-        ...(outcome.publication !== undefined
-          ? ['', formatPullRequestPublication(outcome.publication)]
-          : []),
       ].join('\n'),
       ...(autoResolvedNotice !== undefined ? { autoResolvedNotice } : {}),
     };
