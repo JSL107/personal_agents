@@ -140,7 +140,7 @@ export class ResolveWorkTurnsUsecase {
         )
         .map(classifyAuthorPullRequestTurn);
       const quiet = describeQuietPullRequest({
-        updatedAts: itemSignals.map((signal) => signal?.updatedAt),
+        updatedAts: itemSignals.map((signal) => signal?.lastAuthorActivityAt),
         minDays: QUIET_PR_DAYS,
         now,
       });

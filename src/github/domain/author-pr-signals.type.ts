@@ -22,8 +22,8 @@ export interface AuthorPullRequestSignals {
   pendingReviewers: string[];
   changesRequestedBy: string[];
   observed: boolean;
-  // PR 의 마지막 활동 시각. 내 푸시·봇 코멘트로도 갱신되므로 「상대 무응답」이 아니라 「움직임 없음」 신호다.
-  updatedAt?: string;
+  // 내가 직접 한 마지막 활동 시각(push·리뷰·코멘트·draft 전환·PR 생성). 남이 일으킨 갱신은 넣지 않는다 — 「움직임 없음」 신호다.
+  lastAuthorActivityAt?: string;
 }
 export interface AuthorTurnResult {
   turn: AuthorTurn;
