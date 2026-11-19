@@ -13,6 +13,7 @@ it('정확·유일 매칭 치환 → files+changedFiles+previewText', async () =
       edits: [{ oldString: 'OLD', newString: 'NEW' }],
       rationale: 'r',
       score: 95,
+      failedRequired: [],
       confirmed: true,
     },
   ]);
@@ -31,6 +32,7 @@ it('다중매칭 edit 은 skip — 적용 0건이면 null', async () => {
       edits: [{ oldString: 'x', newString: 'y' }],
       rationale: 'r',
       score: 95,
+      failedRequired: [],
       confirmed: true,
     },
   ]);
@@ -50,6 +52,7 @@ it('매칭0 edit 은 skip, 같은 파일 다른 edit 은 적용', async () => {
       ],
       rationale: 'r',
       score: 95,
+      failedRequired: [],
       confirmed: true,
     },
   ]);

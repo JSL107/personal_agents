@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
 import {
+  precheckEdits,
+  REQUIRED_RUBRIC_KEYS,
+} from '../domain/docs-audit-rubric';
+import { RubricItemKey } from '../domain/docs-audit-rubric.type';
+import {
   DocEdit,
   DocsAuditPort,
   DocsAuditResult,
@@ -10,8 +15,6 @@ import { CodexDocsJudgeAdapter } from '../infrastructure/codex-docs-judge.adapte
 import { DeterministicDocsChecker } from '../infrastructure/deterministic-docs.checker';
 import { DocsRevisionApplier } from '../infrastructure/docs-revision.applier';
 import { GitChangedFilesProvider } from '../infrastructure/git-changed-files.provider';
-
-const PASS_SCORE = 90;
 
 // 코드/문서 발췌 로더 — 테스트 주입용. 실제 구현은 모듈에서 fs.readFile 래퍼 주입.
 export type DocExcerptReader = (filePath: string) => Promise<string>;
@@ -28,6 +31,69 @@ interface BestProposal {
   edits: DocEdit[];
   rationale: string;
   score: number;
+  failedRequired: RubricItemKey[];
+}
+
+// 한 파일의 판정 재료 — 회차가 바뀌어도 그대로다.
+interface AuditContext {
+  targetDoc: string;
+  sotContext: string;
+  docExcerpt: string;
+  // 원문 유일성은 발췌(8000자)가 아니라 문서 전체로 본다 — 적용기와 같은 기준.
+  fullDoc: string;
+}
+
+interface IterationState {
+  context: AuditContext;
+  remaining: number;
+  feedback: string | undefined;
+  best: BestProposal | null;
+  // 직전 회차에 통과하지 못한 필수 항목 수. 첫 회차는 비교 대상이 없어 무한대.
+  previousFailures: number;
+}
+
+interface JudgeRoundParams {
+  context: AuditContext;
+  edits: DocEdit[];
+}
+
+interface JudgeRoundResult {
+  pass: boolean;
+  score: number;
+  failedRequired: RubricItemKey[];
+  feedback: string;
+}
+
+interface ToProposalParams {
+  filePath: string;
+  best: BestProposal;
+  confirmed: boolean;
+}
+
+const toProposal = ({
+  filePath,
+  best,
+  confirmed,
+}: ToProposalParams): DocsRevisionProposal => ({
+  filePath,
+  ...best,
+  confirmed,
+});
+
+// 미확정으로 끝날 때 남길 제안 — 마지막 회차가 아니라 실패 필수 항목이 가장 적었던 회차.
+// 같으면 피드백을 더 반영한 뒤 회차를 남긴다.
+const pickBetter = ({ best, candidate }: PickBetterParams): BestProposal => {
+  if (!best) {
+    return candidate;
+  }
+  const improved =
+    candidate.failedRequired.length <= best.failedRequired.length;
+  return improved ? candidate : best;
+};
+
+interface PickBetterParams {
+  best: BestProposal | null;
+  candidate: BestProposal;
 }
 
 @Injectable()
@@ -40,6 +106,7 @@ export class RunDocsAuditUseCase implements DocsAuditPort {
     private readonly maxFiles: number = 5,
     private readonly maxIterations: number = 3,
     private readonly revisionApplier: DocsRevisionApplier,
+    private readonly readFullDoc: DocExcerptReader,
   ) {}
 
   async runAudit(): Promise<DocsAuditResult> {
@@ -72,11 +139,7 @@ export class RunDocsAuditUseCase implements DocsAuditPort {
     };
   }
 
-  // 한 파일에 대한 optimizer↔evaluator 자기수정 루프. 종료조건 3종이 한 함수에 다 보인다:
-  // - green: evaluator pass && score>=PASS_SCORE → return confirmed:true.
-  // - Bounded Execution: for < maxIterations 반복 캡.
-  // - Circuit Breaker: score 가 직전 대비 개선 없으면(정체) break → 미확정.
-  // 쿼터 예외는 judge.* 가 throw 하면 자연 전파되어 루프가 끊긴다(circuit break).
+  // 한 파일에 대한 optimizer↔evaluator 자기수정 루프. 종료 조건은 iterate 한 곳에 다 보인다.
   private async auditOneFile(
     sotFile: string,
   ): Promise<DocsRevisionProposal | null> {
@@ -86,46 +149,103 @@ export class RunDocsAuditUseCase implements DocsAuditPort {
       return null; // 매핑 없는 SoT 는 skip
     }
     const docExcerpt = await this.readExcerpt(targetDoc);
+    const fullDoc = await this.readFullDoc(targetDoc);
+    return this.iterate({
+      context: { targetDoc, sotContext, docExcerpt, fullDoc },
+      remaining: this.maxIterations,
+      feedback: undefined,
+      best: null,
+      previousFailures: Number.POSITIVE_INFINITY,
+    });
+  }
 
-    let feedback: string | undefined;
-    let best: BestProposal | null = null;
-    let previousScore = -1;
-
-    for (let iteration = 0; iteration < this.maxIterations; iteration++) {
-      const optimized = await this.judge.optimize({
-        filePath: targetDoc,
-        codeContext: sotContext,
-        docExcerpt,
-        evaluatorFeedback: feedback,
-      });
-      if (!optimized.needsRevision) {
-        return null;
-      }
-
-      const verdict = await this.judge.evaluate({
-        filePath: targetDoc,
-        codeContext: sotContext,
-        editsSummary: summarizeEdits(optimized.edits),
-      });
-      best = {
-        edits: optimized.edits,
-        rationale: optimized.rationale,
-        score: verdict.score,
-      };
-
-      if (verdict.pass && verdict.score >= PASS_SCORE) {
-        return { filePath: targetDoc, ...best, confirmed: true };
-      }
-      // Circuit Breaker — 개선 없으면(정체) 더 돌려도 무의미.
-      if (iteration > 0 && verdict.score <= previousScore) {
-        break;
-      }
-      previousScore = verdict.score;
-      feedback = verdict.feedback;
+  // 회차 하나를 돌고, 끝나지 않았으면 다음 회차로 넘어간다. 종료 조건:
+  // - 고칠 게 없음 → null (제안 없음).
+  // - 필수 채점 항목 모두 통과 → 확정.
+  // - 실패 필수 항목 수가 직전보다 줄지 않음(정체) 또는 반복 상한 → 가장 나았던 회차를 미확정으로.
+  // 쿼터 예외는 judge.* 가 throw 하면 그대로 전파되어 루프가 끊긴다.
+  private async iterate({
+    context,
+    remaining,
+    feedback,
+    best,
+    previousFailures,
+  }: IterationState): Promise<DocsRevisionProposal | null> {
+    if (remaining === 0) {
+      // 반복 상한 — 남은 최선 제안이 있으면 미확정으로, 없으면 null.
+      return (
+        best &&
+        toProposal({ filePath: context.targetDoc, best, confirmed: false })
+      );
+    }
+    const optimized = await this.judge.optimize({
+      filePath: context.targetDoc,
+      codeContext: context.sotContext,
+      docExcerpt: context.docExcerpt,
+      evaluatorFeedback: feedback,
+    });
+    if (!optimized.needsRevision) {
+      return null;
     }
 
-    // 반복캡/정체로 미확정 종료 — best 를 미확정 제안으로.
-    return best ? { filePath: targetDoc, ...best, confirmed: false } : null;
+    const round = await this.judgeRound({ context, edits: optimized.edits });
+    const candidate: BestProposal = {
+      edits: optimized.edits,
+      rationale: optimized.rationale,
+      score: round.score,
+      failedRequired: round.failedRequired,
+    };
+    if (round.pass) {
+      return toProposal({
+        filePath: context.targetDoc,
+        best: candidate,
+        confirmed: true,
+      });
+    }
+    const nextBest = pickBetter({ best, candidate });
+    const failures = round.failedRequired.length;
+    if (failures >= previousFailures) {
+      return toProposal({
+        filePath: context.targetDoc,
+        best: nextBest,
+        confirmed: false,
+      });
+    }
+    return this.iterate({
+      context,
+      remaining: remaining - 1,
+      feedback: round.feedback,
+      best: nextBest,
+      previousFailures: failures,
+    });
+  }
+
+  // 결정론 사전검사가 먼저다. 걸리면 평가자를 부르지 않고, 필수 항목 전부 실패로 센다.
+  private async judgeRound({
+    context,
+    edits,
+  }: JudgeRoundParams): Promise<JudgeRoundResult> {
+    const precheckFailures = precheckEdits({ fullDoc: context.fullDoc, edits });
+    if (precheckFailures.length > 0) {
+      return {
+        pass: false,
+        score: 0,
+        failedRequired: [...REQUIRED_RUBRIC_KEYS],
+        feedback: precheckFailures.join('\n'),
+      };
+    }
+    const verdict = await this.judge.evaluate({
+      filePath: context.targetDoc,
+      codeContext: context.sotContext,
+      docExcerpt: context.docExcerpt,
+      editsSummary: summarizeEdits(edits),
+    });
+    return {
+      pass: verdict.pass,
+      score: verdict.score,
+      failedRequired: verdict.failedRequired,
+      feedback: verdict.feedback,
+    };
   }
 }
 

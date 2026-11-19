@@ -92,6 +92,7 @@ const fullDocReader: FullDocReader = async (path) => {
           maxFiles,
           maxIterations,
           revisionApplier,
+          fullDocReader,
         );
       },
       inject: [
