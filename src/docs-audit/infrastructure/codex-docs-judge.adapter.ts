@@ -4,6 +4,11 @@ import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { scoreRubric } from '../domain/docs-audit-rubric';
+import {
+  RubricItemKey,
+  RubricItemVerdict,
+} from '../domain/docs-audit-rubric.type';
 import {
   DocEdit,
   EvaluatorVerdict,
@@ -12,6 +17,7 @@ import {
 import {
   buildEvaluatorPrompt,
   buildOptimizerPrompt,
+  EVALUATOR_OUTPUT_SCHEMA,
   EVALUATOR_SYSTEM_PROMPT,
   OPTIMIZER_SYSTEM_PROMPT,
 } from '../domain/prompt/docs-audit.prompt';
@@ -26,6 +32,7 @@ interface OptimizeInput {
 interface EvaluateInput {
   filePath: string;
   codeContext: string;
+  docExcerpt: string;
   editsSummary: string;
 }
 
@@ -82,14 +89,13 @@ export class CodexDocsJudgeAdapter {
           request: {
             prompt: buildEvaluatorPrompt(input),
             systemPrompt: EVALUATOR_SYSTEM_PROMPT,
+            // 스키마를 건 호출은 Claude 폴백을 타지 않는다 — 평가자는 원래 codex 전용이라 잃는 것이 없다.
+            outputSchema: EVALUATOR_OUTPUT_SCHEMA,
           },
         });
         const parsed = this.parseJson(completion.text);
-        const result: EvaluatorVerdict = {
-          pass: parsed?.pass === true,
-          score: typeof parsed?.score === 'number' ? parsed.score : 0,
-          feedback: typeof parsed?.feedback === 'string' ? parsed.feedback : '',
-        };
+        const items = this.parseRubricItems(parsed?.items);
+        const result: EvaluatorVerdict = { ...scoreRubric(items), items };
         return { result, modelUsed: completion.modelUsed, output: result };
       },
     });
@@ -106,6 +112,29 @@ export class CodexDocsJudgeAdapter {
     } catch {
       return null;
     }
+  }
+
+  // 채점 항목 안전 파싱 — 알 수 없는 key·형식 불량 항목은 버린다(빠진 항목은 scoreRubric 이 판정 불가로 처리).
+  private parseRubricItems(raw: unknown): RubricItemVerdict[] {
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    const keys = Object.values(RubricItemKey);
+    const items: RubricItemVerdict[] = [];
+    for (const item of raw) {
+      if (item === null || typeof item !== 'object') {
+        continue;
+      }
+      const record = item as Record<string, unknown>;
+      const key = keys.find((candidate) => candidate === record.key);
+      if (!key || typeof record.passed !== 'boolean') {
+        continue;
+      }
+      const evidence =
+        typeof record.evidence === 'string' ? record.evidence : '';
+      items.push({ key, passed: record.passed, evidence });
+    }
+    return items;
   }
 
   // edits 배열을 안전 파싱 — 각 항목이 string oldString/newString 일 때만 채택.

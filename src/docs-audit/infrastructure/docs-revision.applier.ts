@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
-import { countOccurrences } from '../../common/util/text-occurrence.util';
+import {
+  countOccurrences,
+  replaceFirstLiteral,
+} from '../../common/util/text-occurrence.util';
 import {
   DocEdit,
   DocsRevision,
@@ -43,7 +46,11 @@ export class DocsRevisionApplier {
         if (occurrences !== 1) {
           continue; // 매칭 0/다중 — 안전상 skip
         }
-        content = content.replace(edit.oldString, edit.newString);
+        content = replaceFirstLiteral({
+          source: content,
+          text: edit.oldString,
+          replacement: edit.newString,
+        });
         applied.push(edit);
       }
       if (content === original || applied.length === 0) {

@@ -1,4 +1,18 @@
-import { DocsAuditResult } from '../../docs-audit/domain/port/docs-audit.port';
+import {
+  DocsAuditResult,
+  DocsRevisionProposal,
+} from '../../docs-audit/domain/port/docs-audit.port';
+
+// 미확정이면 점수보다 "어느 필수 항목에서 떨어졌나" 가 다음 행동을 정한다.
+const describeVerdict = (proposal: DocsRevisionProposal): string => {
+  if (proposal.confirmed) {
+    return `✅ 검증됨 · ${proposal.score}점`;
+  }
+  if (proposal.failedRequired.length === 0) {
+    return `⚠️ 미확정 · ${proposal.score}점`;
+  }
+  return `⚠️ 미확정 · 실패: ${proposal.failedRequired.join(', ')}`;
+};
 
 // LLM/명령 출력에 mrkdwn 제어문자가 섞일 수 있어 백틱 코드블록으로 감싼다(escape 단순화).
 export function formatDocsAudit(
@@ -17,9 +31,8 @@ export function formatDocsAudit(
   if (result.proposals.length > 0) {
     lines.push(`*🤖 문서 의미 드리프트 제안* (${firedAtKst}):`);
     for (const proposal of result.proposals) {
-      const mark = proposal.confirmed ? '✅ 검증됨' : '⚠️ 미확정';
       lines.push(
-        `> *${proposal.filePath}* (${mark}, score ${proposal.score})\n> ${proposal.rationale}`,
+        `> *${proposal.filePath}* (${describeVerdict(proposal)})\n> ${proposal.rationale}`,
       );
     }
   }
