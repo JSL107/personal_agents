@@ -40,6 +40,12 @@ export interface PrecheckEditsParams {
   edits: DocEdit[];
 }
 
+// 사전검사가 편집을 순서대로 가상 적용하는 동안의 문서와 누적 실패 사유.
+export interface PrecheckState {
+  content: string;
+  reasons: string[];
+}
+
 export interface FindVerdictParams {
   items: readonly RubricItemVerdict[];
   key: RubricItemKey;

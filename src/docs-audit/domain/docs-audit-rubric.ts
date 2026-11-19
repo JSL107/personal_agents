@@ -2,6 +2,7 @@ import { countOccurrences } from '../../common/util/text-occurrence.util';
 import {
   FindVerdictParams,
   PrecheckEditsParams,
+  PrecheckState,
   RubricItemKey,
   RubricItemSpec,
   RubricItemVerdict,
@@ -109,8 +110,9 @@ export const scoreRubric = (
 };
 
 // 평가자를 부르기 전에 코드가 확인할 수 있는 것. 실패 사유가 하나라도 있으면 그 회차는 실패다.
-// 원문 유일성은 적용기(DocsRevisionApplier)와 같은 기준 — 지금까지는 확정 뒤 적용 단계에서야
-// 조용히 빠져, 확정된 제안이 일부만 적용될 수 있었다.
+// 원문 유일성은 적용기(DocsRevisionApplier)와 같은 방식 — 편집을 순서대로 가상 적용하며 매번
+// "지금 문서" 에서 센다. 원본에만 대고 세면 앞 편집이 뒤 편집의 원문을 지우거나 늘린 경우를 놓쳐,
+// 확정된 제안이 적용 단계에서 조용히 일부만 반영된다.
 export const precheckEdits = ({
   fullDoc,
   edits,
@@ -119,21 +121,29 @@ export const precheckEdits = ({
     edits.length > MAX_EDITS_PER_FILE
       ? [`edits: 편집 ${edits.length}개 — 파일당 최대 ${MAX_EDITS_PER_FILE}개`]
       : [];
-  const perEdit = [...edits.entries()].flatMap(([index, edit]) => {
-    const label = `편집 #${index + 1}`;
-    if (edit.oldString === edit.newString) {
-      return [`noop: ${label} 은 바꾸는 내용이 없음`];
-    }
-    const occurrences = countOccurrences({
-      source: fullDoc,
-      text: edit.oldString,
-    });
-    if (occurrences !== 1) {
-      return [
-        `unique: ${label} 의 oldString 이 문서에 ${occurrences}회 나옴 (정확히 1회여야 함)`,
-      ];
-    }
-    return [];
-  });
-  return [...tooMany, ...perEdit];
+  const simulated = [...edits.entries()].reduce<PrecheckState>(
+    (state, [index, edit]) => {
+      const label = `편집 #${index + 1}`;
+      if (edit.oldString === edit.newString) {
+        return {
+          content: state.content,
+          reasons: [...state.reasons, `noop: ${label} 은 바꾸는 내용이 없음`],
+        };
+      }
+      const occurrences = countOccurrences({
+        source: state.content,
+        text: edit.oldString,
+      });
+      if (occurrences !== 1) {
+        const reason = `unique: ${label} 의 oldString 이 앞 편집까지 반영한 문서에 ${occurrences}회 나옴 (정확히 1회여야 함)`;
+        return { content: state.content, reasons: [...state.reasons, reason] };
+      }
+      return {
+        content: state.content.replace(edit.oldString, () => edit.newString),
+        reasons: state.reasons,
+      };
+    },
+    { content: fullDoc, reasons: [] },
+  );
+  return [...tooMany, ...simulated.reasons];
 };

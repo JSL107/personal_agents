@@ -88,8 +88,36 @@ describe('precheckEdits', () => {
         ],
       }),
     ).toEqual([
-      'unique: 편집 #1 의 oldString 이 문서에 0회 나옴 (정확히 1회여야 함)',
-      'unique: 편집 #2 의 oldString 이 문서에 2회 나옴 (정확히 1회여야 함)',
+      'unique: 편집 #1 의 oldString 이 앞 편집까지 반영한 문서에 0회 나옴 (정확히 1회여야 함)',
+      'unique: 편집 #2 의 oldString 이 앞 편집까지 반영한 문서에 2회 나옴 (정확히 1회여야 함)',
+    ]);
+  });
+
+  it('앞 편집이 뒤 편집의 원문을 지우면 실패 — 적용기처럼 순서대로 센다', () => {
+    expect(
+      precheckEdits({
+        fullDoc: 'abc 끝',
+        edits: [
+          { oldString: 'abc', newString: 'x' },
+          { oldString: 'bc', newString: 'y' },
+        ],
+      }),
+    ).toEqual([
+      'unique: 편집 #2 의 oldString 이 앞 편집까지 반영한 문서에 0회 나옴 (정확히 1회여야 함)',
+    ]);
+  });
+
+  it('앞 편집이 뒤 편집의 원문을 하나 더 만들면 실패', () => {
+    expect(
+      precheckEdits({
+        fullDoc: '기본값 5, 상한 7',
+        edits: [
+          { oldString: '7', newString: '5' },
+          { oldString: '5', newString: '3' },
+        ],
+      }),
+    ).toEqual([
+      'unique: 편집 #2 의 oldString 이 앞 편집까지 반영한 문서에 2회 나옴 (정확히 1회여야 함)',
     ]);
   });
 
