@@ -42,14 +42,60 @@ describe('CodexDocsJudgeAdapter', () => {
     expect(out.edits).toEqual([]);
   });
 
-  it('evaluate: pass/score 파싱(editsSummary 입력)', async () => {
-    const router = makeRouter('{"pass": true, "score": 95, "feedback": "ok"}');
-    const verdict = await adapter(router).evaluate({
-      filePath: 'README.md',
-      codeContext: 'c',
-      editsSummary: 'a→b',
+  const rubricJson = (failed: string[] = []) =>
+    JSON.stringify({
+      items: ['factual', 'complete', 'scoped', 'cited', 'styled'].map(
+        (key) => ({
+          key,
+          passed: !failed.includes(key),
+          evidence: failed.includes(key) ? `${key} 근거` : '',
+        }),
+      ),
     });
-    expect(verdict).toEqual({ pass: true, score: 95, feedback: 'ok' });
+  const evaluateInput = {
+    filePath: 'README.md',
+    codeContext: 'c',
+    docExcerpt: 'd',
+    editsSummary: 'a→b',
+  };
+
+  it('evaluate: 항목 판정으로 점수·통과를 코드가 계산한다', async () => {
+    const verdict = await adapter(makeRouter(rubricJson(['styled']))).evaluate(
+      evaluateInput,
+    );
+    expect(verdict).toMatchObject({
+      judgeable: true,
+      pass: true,
+      score: 95,
+      failedRequired: [],
+      feedback: 'styled(형식 유지): styled 근거',
+    });
+    expect(verdict.items).toHaveLength(5);
+  });
+
+  it('evaluate: 필수 항목이 하나라도 아니오면 불통과', async () => {
+    const verdict = await adapter(
+      makeRouter(rubricJson(['complete'])),
+    ).evaluate(evaluateInput);
+    expect(verdict.pass).toBe(false);
+    expect(verdict.failedRequired).toEqual(['complete']);
+  });
+
+  it('evaluate: 형식이 깨진 응답은 0점이 아니라 판정 불가', async () => {
+    const verdict = await adapter(
+      makeRouter('{"pass": true, "score": 95}'),
+    ).evaluate(evaluateInput);
+    expect(verdict.judgeable).toBe(false);
+    expect(verdict.pass).toBe(false);
+    expect(verdict.feedback).toContain('평가 응답 형식 오류');
+  });
+
+  it('evaluate: 출력 스키마를 걸고, 문서 발췌를 프롬프트에 싣는다', async () => {
+    const router = makeRouter(rubricJson());
+    await adapter(router).evaluate(evaluateInput);
+    const { request } = router.route.mock.calls[0][0];
+    expect(request.outputSchema).toBeDefined();
+    expect(request.prompt).toContain('[현재 문서 발췌]\nd');
   });
 
   it('optimize·evaluate 는 각자 자기 agentType 으로 AgentRun 을 남긴다', async () => {
@@ -62,6 +108,7 @@ describe('CodexDocsJudgeAdapter', () => {
     await adapter(router).evaluate({
       filePath: 'a.md',
       codeContext: '',
+      docExcerpt: '',
       editsSummary: '',
     });
     expect(

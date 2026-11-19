@@ -1,5 +1,11 @@
 // docs-sync-audit 포트 — 문서↔코드 동기화 점검 결과. autopilot task 가 소비.
 
+import {
+  RubricItemKey,
+  RubricItemVerdict,
+  RubricScore,
+} from '../docs-audit-rubric.type';
+
 // Layer 1: 결정론 게이트 (docs:check / check:env).
 export interface DeterministicDriftReport {
   // drift 가 있으면 false. 깨끗하면 true.
@@ -25,11 +31,9 @@ export interface OptimizerOutput {
   rationale: string;
 }
 
-// Layer 2: evaluator 채점.
-export interface EvaluatorVerdict {
-  pass: boolean;
-  score: number; // 0-100
-  feedback: string;
+// Layer 2: evaluator 채점. LLM 은 items 만 채우고, 나머지(RubricScore)는 scoreRubric 이 계산한다.
+export interface EvaluatorVerdict extends RubricScore {
+  items: RubricItemVerdict[];
 }
 
 // Layer 2: 루프가 확정한 검증된 제안.
@@ -38,7 +42,9 @@ export interface DocsRevisionProposal {
   edits: DocEdit[];
   rationale: string;
   score: number;
-  // green 종료(true) vs 반복캡/Circuit Breaker 로 미확정 종료(false).
+  // 통과하지 못한 필수 채점 항목 — 확정 제안이면 빈 배열. Slack 보고가 "왜 미확정인지" 로 쓴다.
+  failedRequired: RubricItemKey[];
+  // 필수 항목 통과로 확정(true) vs 반복캡/정체로 미확정 종료(false).
   confirmed: boolean;
 }
 
