@@ -58,3 +58,20 @@ it('매칭0 edit 은 skip, 같은 파일 다른 edit 은 적용', async () => {
   ]);
   expect(rev!.files[0].content).toBe('keep BBB tail');
 });
+
+it('새 문장의 $& 같은 표기를 치환 명령이 아니라 글자 그대로 넣는다', async () => {
+  const applier = new DocsRevisionApplier(
+    reader({ 'README.md': '변수 OLD 끝' }),
+  );
+  const rev = await applier.buildRevision([
+    {
+      filePath: 'README.md',
+      edits: [{ oldString: 'OLD', newString: '`$&` 표기' }],
+      rationale: 'r',
+      score: 100,
+      failedRequired: [],
+      confirmed: true,
+    },
+  ]);
+  expect(rev!.files[0].content).toBe('변수 `$&` 표기 끝');
+});

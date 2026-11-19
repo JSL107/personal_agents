@@ -1,4 +1,7 @@
-import { countOccurrences } from '../../common/util/text-occurrence.util';
+import {
+  countOccurrences,
+  replaceFirstLiteral,
+} from '../../common/util/text-occurrence.util';
 import {
   FindVerdictParams,
   PrecheckEditsParams,
@@ -66,6 +69,14 @@ const findVerdict = ({
 }: FindVerdictParams): RubricItemVerdict | undefined =>
   items.find((item) => item.key === key);
 
+const unjudgeable = (feedback: string): RubricScore => ({
+  judgeable: false,
+  pass: false,
+  score: 0,
+  failedRequired: [...REQUIRED_RUBRIC_KEYS],
+  feedback,
+});
+
 export const scoreRubric = (
   items: readonly RubricItemVerdict[],
 ): RubricScore => {
@@ -74,13 +85,16 @@ export const scoreRubric = (
   );
   if (missing.length > 0) {
     const missingKeys = missing.map((spec) => spec.key).join(', ');
-    return {
-      judgeable: false,
-      pass: false,
-      score: 0,
-      failedRequired: [...REQUIRED_RUBRIC_KEYS],
-      feedback: `평가 응답 형식 오류 — 항목 누락: ${missingKeys}`,
-    };
+    return unjudgeable(`평가 응답 형식 오류 — 항목 누락: ${missingKeys}`);
+  }
+  // 같은 항목이 두 번 오면 어느 판정을 믿을지 정할 수 없다 — 첫 값을 고르면 상반된 판정이
+  // 함께 와도 순서에 따라 확정될 수 있다.
+  const duplicated = RUBRIC.filter(
+    (spec) => items.filter((item) => item.key === spec.key).length > 1,
+  );
+  if (duplicated.length > 0) {
+    const duplicatedKeys = duplicated.map((spec) => spec.key).join(', ');
+    return unjudgeable(`평가 응답 형식 오류 — 항목 중복: ${duplicatedKeys}`);
   }
 
   const judged = RUBRIC.map((spec) => ({
@@ -100,19 +114,42 @@ export const scoreRubric = (
       return `${spec.key}(${spec.label}): ${evidence}`;
     })
     .join('\n');
-  return {
-    judgeable: true,
-    pass: failedRequired.length === 0,
-    score,
-    failedRequired,
-    feedback,
-  };
+  const pass = failedRequired.length === 0;
+  return { judgeable: true, pass, score, failedRequired, feedback };
+};
+
+// 편집을 적용기(DocsRevisionApplier)와 같은 방식으로 순서대로 가상 적용한다 — 매번 "지금 문서" 에서
+// 원문을 세고, 글자 그대로 바꾼다. 원본에만 대고 세면 앞 편집이 뒤 편집의 원문을 지우거나 늘린 경우를
+// 놓쳐, 확정된 제안이 적용 단계에서 조용히 일부만 반영된다.
+export const simulateEdits = ({
+  fullDoc,
+  edits,
+}: PrecheckEditsParams): PrecheckState => {
+  const initial: PrecheckState = { content: fullDoc, reasons: [] };
+  return [...edits.entries()].reduce<PrecheckState>((state, [index, edit]) => {
+    const label = `편집 #${index + 1}`;
+    if (edit.oldString === edit.newString) {
+      const reason = `noop: ${label} 은 바꾸는 내용이 없음`;
+      return { content: state.content, reasons: [...state.reasons, reason] };
+    }
+    const occurrences = countOccurrences({
+      source: state.content,
+      text: edit.oldString,
+    });
+    if (occurrences !== 1) {
+      const reason = `unique: ${label} 의 oldString 이 앞 편집까지 반영한 문서에 ${occurrences}회 나옴 (정확히 1회여야 함)`;
+      return { content: state.content, reasons: [...state.reasons, reason] };
+    }
+    const content = replaceFirstLiteral({
+      source: state.content,
+      text: edit.oldString,
+      replacement: edit.newString,
+    });
+    return { content, reasons: state.reasons };
+  }, initial);
 };
 
 // 평가자를 부르기 전에 코드가 확인할 수 있는 것. 실패 사유가 하나라도 있으면 그 회차는 실패다.
-// 원문 유일성은 적용기(DocsRevisionApplier)와 같은 방식 — 편집을 순서대로 가상 적용하며 매번
-// "지금 문서" 에서 센다. 원본에만 대고 세면 앞 편집이 뒤 편집의 원문을 지우거나 늘린 경우를 놓쳐,
-// 확정된 제안이 적용 단계에서 조용히 일부만 반영된다.
 export const precheckEdits = ({
   fullDoc,
   edits,
@@ -121,29 +158,6 @@ export const precheckEdits = ({
     edits.length > MAX_EDITS_PER_FILE
       ? [`edits: 편집 ${edits.length}개 — 파일당 최대 ${MAX_EDITS_PER_FILE}개`]
       : [];
-  const simulated = [...edits.entries()].reduce<PrecheckState>(
-    (state, [index, edit]) => {
-      const label = `편집 #${index + 1}`;
-      if (edit.oldString === edit.newString) {
-        return {
-          content: state.content,
-          reasons: [...state.reasons, `noop: ${label} 은 바꾸는 내용이 없음`],
-        };
-      }
-      const occurrences = countOccurrences({
-        source: state.content,
-        text: edit.oldString,
-      });
-      if (occurrences !== 1) {
-        const reason = `unique: ${label} 의 oldString 이 앞 편집까지 반영한 문서에 ${occurrences}회 나옴 (정확히 1회여야 함)`;
-        return { content: state.content, reasons: [...state.reasons, reason] };
-      }
-      return {
-        content: state.content.replace(edit.oldString, () => edit.newString),
-        reasons: state.reasons,
-      };
-    },
-    { content: fullDoc, reasons: [] },
-  );
+  const simulated = simulateEdits({ fullDoc, edits });
   return [...tooMany, ...simulated.reasons];
 };

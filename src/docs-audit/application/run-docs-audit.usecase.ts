@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import {
   precheckEdits,
   REQUIRED_RUBRIC_KEYS,
+  simulateEdits,
 } from '../domain/docs-audit-rubric';
 import { RubricItemKey } from '../domain/docs-audit-rubric.type';
 import {
@@ -43,13 +44,20 @@ interface AuditContext {
   fullDoc: string;
 }
 
+// 회차 하나의 제안과 순위. 순위가 낮을수록 낫다 — 평가까지 간 회차는 실패한 필수 항목 수,
+// 사전검사에서 떨어진 회차는 그보다 하나 더 많게 친다(적용조차 안 되는 편집이라 평가받은 어떤 회차보다 나쁘다).
+interface RankedProposal {
+  proposal: BestProposal;
+  rank: number;
+}
+
 interface IterationState {
   context: AuditContext;
   remaining: number;
   feedback: string | undefined;
-  best: BestProposal | null;
-  // 직전 회차에 통과하지 못한 필수 항목 수. 첫 회차는 비교 대상이 없어 무한대.
-  previousFailures: number;
+  best: RankedProposal | null;
+  // 직전 회차의 순위. 첫 회차는 비교 대상이 없어 무한대.
+  previousRank: number;
 }
 
 interface JudgeRoundParams {
@@ -62,6 +70,19 @@ interface JudgeRoundResult {
   score: number;
   failedRequired: RubricItemKey[];
   feedback: string;
+  rank: number;
+}
+
+interface FinishUnconfirmedParams {
+  context: AuditContext;
+  best: RankedProposal | null;
+}
+
+interface AuditOneFileParams {
+  sotFile: string;
+  // 대상 문서별로, 앞서 확정된 제안의 편집까지 반영한 내용. 적용기는 같은 문서의 확정 제안을
+  // 합쳐 순서대로 적용하므로, 다음 제안의 사전검사도 그 결과 위에서 해야 한다.
+  docState: Map<string, string>;
 }
 
 interface ToProposalParams {
@@ -69,6 +90,8 @@ interface ToProposalParams {
   best: BestProposal;
   confirmed: boolean;
 }
+
+const PRECHECK_FAILED_RANK = REQUIRED_RUBRIC_KEYS.length + 1;
 
 const toProposal = ({
   filePath,
@@ -80,20 +103,21 @@ const toProposal = ({
   confirmed,
 });
 
-// 미확정으로 끝날 때 남길 제안 — 마지막 회차가 아니라 실패 필수 항목이 가장 적었던 회차.
+// 미확정으로 끝날 때 남길 제안 — 마지막 회차가 아니라 순위가 가장 나았던 회차.
 // 같으면 피드백을 더 반영한 뒤 회차를 남긴다.
-const pickBetter = ({ best, candidate }: PickBetterParams): BestProposal => {
+const pickBetter = ({ best, candidate }: PickBetterParams): RankedProposal => {
   if (!best) {
     return candidate;
   }
-  const improved =
-    candidate.failedRequired.length <= best.failedRequired.length;
-  return improved ? candidate : best;
+  if (candidate.rank <= best.rank) {
+    return candidate;
+  }
+  return best;
 };
 
 interface PickBetterParams {
-  best: BestProposal | null;
-  candidate: BestProposal;
+  best: RankedProposal | null;
+  candidate: RankedProposal;
 }
 
 @Injectable()
@@ -120,8 +144,9 @@ export class RunDocsAuditUseCase implements DocsAuditPort {
     );
 
     const proposals: DocsRevisionProposal[] = [];
+    const docState = new Map<string, string>();
     for (const sotFile of judgeTargets) {
-      const proposal = await this.auditOneFile(sotFile);
+      const proposal = await this.auditOneFile({ sotFile, docState });
       if (proposal) {
         proposals.push(proposal);
       }
@@ -140,43 +165,46 @@ export class RunDocsAuditUseCase implements DocsAuditPort {
   }
 
   // 한 파일에 대한 optimizer↔evaluator 자기수정 루프. 종료 조건은 iterate 한 곳에 다 보인다.
-  private async auditOneFile(
-    sotFile: string,
-  ): Promise<DocsRevisionProposal | null> {
+  private async auditOneFile({
+    sotFile,
+    docState,
+  }: AuditOneFileParams): Promise<DocsRevisionProposal | null> {
     const sotContext = await this.readExcerpt(sotFile);
     const targetDoc = SOT_TO_DOC[sotFile];
     if (!targetDoc) {
       return null; // 매핑 없는 SoT 는 skip
     }
     const docExcerpt = await this.readExcerpt(targetDoc);
-    const fullDoc = await this.readFullDoc(targetDoc);
-    return this.iterate({
+    const fullDoc =
+      docState.get(targetDoc) ?? (await this.readFullDoc(targetDoc));
+    const proposal = await this.iterate({
       context: { targetDoc, sotContext, docExcerpt, fullDoc },
       remaining: this.maxIterations,
       feedback: undefined,
       best: null,
-      previousFailures: Number.POSITIVE_INFINITY,
+      previousRank: Number.POSITIVE_INFINITY,
     });
+    if (proposal?.confirmed) {
+      const applied = simulateEdits({ fullDoc, edits: proposal.edits });
+      docState.set(targetDoc, applied.content);
+    }
+    return proposal;
   }
 
   // 회차 하나를 돌고, 끝나지 않았으면 다음 회차로 넘어간다. 종료 조건:
   // - 고칠 게 없음 → null (제안 없음).
   // - 필수 채점 항목 모두 통과 → 확정.
-  // - 실패 필수 항목 수가 직전보다 줄지 않음(정체) 또는 반복 상한 → 가장 나았던 회차를 미확정으로.
+  // - 순위가 직전보다 나아지지 않음(정체) 또는 반복 상한 → 가장 나았던 회차를 미확정으로.
   // 쿼터 예외는 judge.* 가 throw 하면 그대로 전파되어 루프가 끊긴다.
   private async iterate({
     context,
     remaining,
     feedback,
     best,
-    previousFailures,
+    previousRank,
   }: IterationState): Promise<DocsRevisionProposal | null> {
     if (remaining === 0) {
-      // 반복 상한 — 남은 최선 제안이 있으면 미확정으로, 없으면 null.
-      return (
-        best &&
-        toProposal({ filePath: context.targetDoc, best, confirmed: false })
-      );
+      return this.finishUnconfirmed({ context, best });
     }
     const optimized = await this.judge.optimize({
       filePath: context.targetDoc,
@@ -202,21 +230,33 @@ export class RunDocsAuditUseCase implements DocsAuditPort {
         confirmed: true,
       });
     }
-    const nextBest = pickBetter({ best, candidate });
-    const failures = round.failedRequired.length;
-    if (failures >= previousFailures) {
-      return toProposal({
-        filePath: context.targetDoc,
-        best: nextBest,
-        confirmed: false,
-      });
+    const nextBest = pickBetter({
+      best,
+      candidate: { proposal: candidate, rank: round.rank },
+    });
+    if (round.rank >= previousRank) {
+      return this.finishUnconfirmed({ context, best: nextBest });
     }
     return this.iterate({
       context,
       remaining: remaining - 1,
       feedback: round.feedback,
       best: nextBest,
-      previousFailures: failures,
+      previousRank: round.rank,
+    });
+  }
+
+  private finishUnconfirmed({
+    context,
+    best,
+  }: FinishUnconfirmedParams): DocsRevisionProposal | null {
+    if (!best) {
+      return null;
+    }
+    return toProposal({
+      filePath: context.targetDoc,
+      best: best.proposal,
+      confirmed: false,
     });
   }
 
@@ -232,6 +272,7 @@ export class RunDocsAuditUseCase implements DocsAuditPort {
         score: 0,
         failedRequired: [...REQUIRED_RUBRIC_KEYS],
         feedback: precheckFailures.join('\n'),
+        rank: PRECHECK_FAILED_RANK,
       };
     }
     const verdict = await this.judge.evaluate({
@@ -245,6 +286,7 @@ export class RunDocsAuditUseCase implements DocsAuditPort {
       score: verdict.score,
       failedRequired: verdict.failedRequired,
       feedback: verdict.feedback,
+      rank: verdict.failedRequired.length,
     };
   }
 }

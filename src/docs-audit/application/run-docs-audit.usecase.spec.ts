@@ -176,6 +176,44 @@ it('바꾸는 내용이 없는 편집은 사전검사에서 실패한다', async
   });
 });
 
+it('사전검사에서 떨어진 회차는 평가받은 회차보다 나쁘게 친다 — 실패 수가 같아도 앞 회차를 남긴다', async () => {
+  const d = makeDeps();
+  d.judge.optimize
+    .mockResolvedValueOnce(revise('a', 'evaluated'))
+    .mockResolvedValueOnce(revise('없는원문', 'broken'));
+  d.judge.evaluate.mockResolvedValueOnce(verdict(REQUIRED));
+  const result = await build(d).runAudit();
+  // 2회차는 사전검사 실패(순위 4) → 1회차(순위 3)보다 나쁨 → 정체로 중단.
+  expect(d.judge.optimize).toHaveBeenCalledTimes(2);
+  expect(result.proposals[0].edits[0].newString).toBe('evaluated');
+});
+
+it('같은 문서를 고치는 다음 제안은 앞서 확정된 편집을 반영한 문서로 사전검사한다', async () => {
+  const d = makeDeps({
+    maxIterations: 1,
+    gitFiles: {
+      recentlyChangedSotFiles: jest
+        .fn()
+        .mockResolvedValue([
+          'src/config/app.config.ts',
+          'src/agent-registry/agent-registry.ts',
+        ]),
+    },
+  });
+  // 두 SoT 모두 README.md 를 고친다. 첫 제안이 'a' 를 지우면 둘째 제안의 'a' 는 더 이상 없다.
+  d.judge.optimize
+    .mockResolvedValueOnce(revise('a', 'b'))
+    .mockResolvedValueOnce(revise('a', 'c'));
+  d.judge.evaluate.mockResolvedValue(verdict([]));
+  const result = await build(d).runAudit();
+  expect(d.judge.evaluate).toHaveBeenCalledTimes(1);
+  expect(result.proposals.map((proposal) => proposal.confirmed)).toEqual([
+    true,
+    false,
+  ]);
+  expect(d.fullReader).toHaveBeenCalledTimes(1);
+});
+
 it('(d) needsRevision=false → 제안 없음', async () => {
   const d = makeDeps();
   d.judge.optimize.mockResolvedValue({

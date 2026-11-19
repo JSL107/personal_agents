@@ -63,6 +63,15 @@ describe('scoreRubric', () => {
     expect(result.feedback).toContain('항목 누락: factual');
   });
 
+  it('같은 항목이 두 번 오면 판정 불가 — 상반된 판정을 순서로 고르지 않는다', () => {
+    const result = scoreRubric([
+      ...judged(),
+      { key: RubricItemKey.FACTUAL, passed: false, evidence: '틀림' },
+    ]);
+    expect(result).toMatchObject({ judgeable: false, pass: false, score: 0 });
+    expect(result.feedback).toContain('항목 중복: factual');
+  });
+
   it('배점 합은 100', () => {
     expect(RUBRIC.reduce((sum, spec) => sum + spec.weight, 0)).toBe(100);
   });
@@ -119,6 +128,18 @@ describe('precheckEdits', () => {
     ).toEqual([
       'unique: 편집 #2 의 oldString 이 앞 편집까지 반영한 문서에 2회 나옴 (정확히 1회여야 함)',
     ]);
+  });
+
+  it('가상 적용도 $& 를 글자 그대로 넣어, 뒤 편집이 그 글자를 찾을 수 있다', () => {
+    expect(
+      precheckEdits({
+        fullDoc: 'A 끝',
+        edits: [
+          { oldString: 'A', newString: '$&' },
+          { oldString: '$&', newString: 'B' },
+        ],
+      }),
+    ).toEqual([]);
   });
 
   it('바꾸는 내용이 없는 편집은 실패', () => {
