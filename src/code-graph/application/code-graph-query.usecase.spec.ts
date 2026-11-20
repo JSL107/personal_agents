@@ -261,6 +261,71 @@ describe('CodeGraphQueryUsecase', () => {
       expect(result.map((candidate) => candidate.name)).toEqual(['buildArgs']);
     });
 
+    it('식별자를 통째로 붙인 키워드는 전체 이름 일치로 낱말 일치와 같은 10점을 준다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([
+          chunk('splitKeywords'),
+          chunk('IntentClassifierUsecase', 'class'),
+          ...filler(200),
+        ]),
+        keywords: ['split', 'intentclassifierusecase'],
+        limit: 12,
+      });
+      expect(
+        result.map((candidate) => [candidate.name, candidate.score]),
+      ).toEqual([
+        ['splitKeywords', 10],
+        ['IntentClassifierUsecase', 10],
+      ]);
+    });
+
+    it('기호만 있는 키워드는 낱말이 없는 이름과 맞지 않는다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([chunk('_'), ...filler(100)]),
+        keywords: ['--'],
+        limit: 12,
+      });
+      expect(result).toEqual([]);
+    });
+
+    it('이름의 일부만 이어 붙인 키워드는 이름 일치로 치지 않는다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([chunk('installStopHook'), ...filler(100)]),
+        keywords: ['stophook'],
+        limit: 12,
+      });
+      expect(result).toEqual([]);
+    });
+
+    it('밑줄로 이은 키워드도 전체 이름과 비교한다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([
+          chunk('IntentClassifier', 'class'),
+          ...filler(100),
+        ]),
+        keywords: ['intent_classifier'],
+        limit: 12,
+      });
+      expect(result.map((candidate) => candidate.name)).toEqual([
+        'IntentClassifier',
+      ]);
+    });
+
+    it('흔한 낱말로 이뤄진 이름이라도 전체 이름 일치는 2% 필터에 걸리지 않는다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([
+          chunk('runA'),
+          chunk('runB'),
+          chunk('runC'),
+          chunk('runAll'),
+          ...filler(96),
+        ]),
+        keywords: ['run', 'runall'],
+        limit: 12,
+      });
+      expect(result.map((candidate) => candidate.name)).toEqual(['runAll']);
+    });
+
     it('키워드가 비면 빈 배열', () => {
       expect(
         usecase.findChunksByKeywords({
