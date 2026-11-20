@@ -473,16 +473,33 @@ export class CodexCliProvider
   private readonly timeoutMs: number = CODEX_DEFAULT_TIMEOUT_MS;
   private quotaBlockedUntilMs: number | null = null;
   private quotaBlockedResetHint: string | undefined;
+  // 부팅 점검이 잠금 실패(또는 점검 불가)를 본 뒤로는 호출마다 다시 점검하고, 통과해야 codex 를 띄운다.
+  // 로그만 남기면 디스크 전체를 읽을 수 있는 codex 가 그대로 돈다. 통과하면 풀어서 일시 장애로 영구
+  // 차단되지 않게 한다. 막힌 호출은 claude 폴백으로 가는데, claude 는 도구가 잠겨 파일을 못 읽는다.
+  private readLockFailed = false;
+  // 부팅 점검이 끝나기 전 호출이 확인 없이 지나가지 않게, 호출은 이 점검을 먼저 기다린다.
+  private bootReadLockCheck: Promise<void> | undefined;
 
-  // 부팅을 막지 않게 기다리지 않는다. 실패해도 호출은 계속한다 — 잠금이 안 먹으면 잠금 도입 전과 같은
-  // 상태일 뿐이고, codex 를 막으면 전 에이전트가 이 잠금 밖의 claude 폴백으로 옮겨 갈 뿐이다.
+  // 부팅은 점검을 기다리지 않는다.
   onApplicationBootstrap(): void {
-    void this.checkReadLock();
+    this.bootReadLockCheck = this.checkReadLock();
   }
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
-    if (request.readableRoots?.length) {
-      await this.assertReadLock({ extraReadableRoots: request.readableRoots });
+    if (this.bootReadLockCheck) {
+      await this.bootReadLockCheck;
+    }
+    if (request.readableRoots?.length || this.readLockFailed) {
+      try {
+        await this.assertReadLock({
+          extraReadableRoots: request.readableRoots,
+        });
+      } catch (error) {
+        // 읽기 경로 요청이 발견한 실패도 기록해야 뒤따르는 일반 요청이 점검 없이 지나가지 않는다.
+        this.readLockFailed = true;
+        throw error;
+      }
+      this.readLockFailed = false;
     }
     let lastError: unknown;
     let model = CODEX_MODEL;
@@ -552,12 +569,16 @@ export class CodexCliProvider
         );
         return;
       }
+      this.readLockFailed = true;
       this.logger.error(
-        `codex 읽기 범위 잠금 점검 실패 — 모델이 디스크 전체를 읽을 수 있다: ${result.reason}`,
+        `codex 읽기 범위 잠금 점검 실패 — 통과할 때까지 codex 호출을 막는다: ${result.reason}`,
       );
     } catch (error: unknown) {
+      this.readLockFailed = true;
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`codex 읽기 범위 잠금 점검 불가: ${message}`);
+      this.logger.error(
+        `codex 읽기 범위 잠금 점검 불가 — 통과할 때까지 codex 호출을 막는다: ${message}`,
+      );
     }
   }
 

@@ -942,7 +942,7 @@ describe('verifyCodexReadLock', () => {
     expect(catPaths).toEqual([readablePath]);
   });
 
-  it('부팅 점검이 실패해도 예외 없이 ERROR 로그만 남긴다 (fail-open 은 의도)', async () => {
+  it('부팅 점검이 실패해도 부팅은 예외 없이 끝나고 ERROR 로그를 남긴다', async () => {
     mockSandboxCat(() => false);
     const errorSpy = jest
       .spyOn(Logger.prototype, 'error')
@@ -993,6 +993,75 @@ describe('CodexCliProvider readableRoots', () => {
     await expect(
       provider.complete({ prompt: 'p', readableRoots: ['/var/repo-copy'] }),
     ).rejects.toBeInstanceOf(CodexReadLockException);
+    expect(spawnSpy).not.toHaveBeenCalled();
+  });
+
+  it('부팅 점검이 실패했으면 읽기 경로가 없는 호출도 다시 점검하고 실패하면 막는다', async () => {
+    mockSandboxCat(() => true);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const provider = new CodexCliProvider();
+    const spawnSpy = stubSpawn(provider as unknown as ProviderWithSpawnCodex);
+    await (
+      provider as unknown as { checkReadLock: () => Promise<void> }
+    ).checkReadLock();
+
+    await expect(provider.complete({ prompt: 'p' })).rejects.toBeInstanceOf(
+      CodexReadLockException,
+    );
+    expect(spawnSpy).not.toHaveBeenCalled();
+  });
+
+  // 일시 장애로 부팅 점검이 실패했을 때 프로세스가 끝날 때까지 codex 가 막혀 있으면 안 된다.
+  it('부팅 점검이 실패했어도 호출 때 다시 점검해 통과하면 codex 를 띄우고 차단을 푼다', async () => {
+    const lock = { broken: true };
+    const catPaths = mockSandboxCat(
+      (path) => lock.broken || !path.endsWith('canary.txt'),
+    );
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const provider = new CodexCliProvider();
+    const spawnSpy = stubSpawn(provider as unknown as ProviderWithSpawnCodex);
+    await (
+      provider as unknown as { checkReadLock: () => Promise<void> }
+    ).checkReadLock();
+    lock.broken = false;
+
+    await expect(provider.complete({ prompt: 'p' })).resolves.toMatchObject({
+      text: 'ok',
+    });
+    const probedPaths = catPaths.length;
+    await expect(provider.complete({ prompt: 'p' })).resolves.toMatchObject({
+      text: 'ok',
+    });
+
+    expect(spawnSpy).toHaveBeenCalledTimes(2);
+    expect(catPaths).toHaveLength(probedPaths);
+  });
+
+  it('부팅 점검이 도는 중에 들어온 호출은 점검 결과를 기다렸다가 막힌다', async () => {
+    mockSandboxCat(() => true);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const provider = new CodexCliProvider();
+    const spawnSpy = stubSpawn(provider as unknown as ProviderWithSpawnCodex);
+
+    provider.onApplicationBootstrap();
+
+    await expect(provider.complete({ prompt: 'p' })).rejects.toBeInstanceOf(
+      CodexReadLockException,
+    );
+    expect(spawnSpy).not.toHaveBeenCalled();
+  });
+
+  it('읽기 경로 요청의 재점검이 실패하면 뒤따르는 일반 호출도 막는다', async () => {
+    mockSandboxCat(() => true);
+    const provider = new CodexCliProvider();
+    const spawnSpy = stubSpawn(provider as unknown as ProviderWithSpawnCodex);
+
+    await expect(
+      provider.complete({ prompt: 'p', readableRoots: ['/var/repo-copy'] }),
+    ).rejects.toBeInstanceOf(CodexReadLockException);
+    await expect(provider.complete({ prompt: 'p' })).rejects.toBeInstanceOf(
+      CodexReadLockException,
+    );
     expect(spawnSpy).not.toHaveBeenCalled();
   });
 
