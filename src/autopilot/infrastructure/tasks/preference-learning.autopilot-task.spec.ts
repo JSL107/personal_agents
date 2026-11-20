@@ -15,32 +15,131 @@ const buildAgentRun = (
 
 const ctx = { ownerSlackUserId: 'U1', firedAtKst: '2026-07-05' };
 
+const HOUR_MS = 60 * 60 * 1000;
+// 고아 유예(6시간)를 넘긴 제안과, 아직 앞 실행이 카드를 만드는 중일 수 있는 제안.
+const OLD = 7 * HOUR_MS;
+const FRESH = 10 * 60 * 1000;
+const pendingAt = (id: number, ageMs: number) => ({
+  id,
+  createdAt: new Date(Date.now() - ageMs),
+});
+
 describe('PreferenceLearningAutopilotTask', () => {
   it('게이트 OFF 면 skip', async () => {
     const task = new PreferenceLearningAutopilotTask(
       { collect: jest.fn() } as never,
       { infer: jest.fn() } as never,
       { findActive: jest.fn() } as never,
-      { createPending: jest.fn(), countPendingSince: jest.fn() } as never,
+      { createPending: jest.fn(), findPendingSince: jest.fn() } as never,
       buildConfig('false'),
       buildAgentRun(),
+      {} as never,
     );
     expect(await task.run(ctx)).toEqual({ skip: true });
   });
 
-  it('이번 주 PENDING 제안 있으면 skip', async () => {
+  it('이번 주 승인 카드가 나간 PENDING 제안 있으면 skip', async () => {
+    const collect = jest.fn();
+    const markResolved = jest.fn();
+    const countByPayloadValue = jest.fn().mockResolvedValue(1);
     const task = new PreferenceLearningAutopilotTask(
-      { collect: jest.fn() } as never,
+      { collect } as never,
       { infer: jest.fn() } as never,
       { findActive: jest.fn() } as never,
       {
         createPending: jest.fn(),
-        countPendingSince: jest.fn().mockResolvedValue(1),
+        findPendingSince: jest.fn().mockResolvedValue([pendingAt(7, OLD)]),
+        markResolved,
       } as never,
       buildConfig('true'),
       buildAgentRun(),
+      { countByPayloadValue } as never,
     );
     expect(await task.run(ctx)).toEqual({ skip: true });
+    expect(countByPayloadValue).toHaveBeenCalledWith({
+      kind: 'PREFERENCE_PROFILE',
+      payloadPath: ['proposalId'],
+      payloadValue: 7,
+    });
+    expect(markResolved).not.toHaveBeenCalled();
+    expect(collect).not.toHaveBeenCalled();
+  });
+
+  // 카드 생성 실패나 카드 앞 단계 실패로 재시도된 회차가 남긴 제안은 아무도 답할 수 없다.
+  it('승인 카드가 없는 PENDING 제안은 EXPIRED 로 닫고 가드에서 뺀다', async () => {
+    const collect = jest.fn().mockResolvedValue([]);
+    const markResolved = jest.fn();
+    const task = new PreferenceLearningAutopilotTask(
+      { collect } as never,
+      { infer: jest.fn() } as never,
+      { findActive: jest.fn().mockResolvedValue(null) } as never,
+      {
+        createPending: jest.fn(),
+        findPendingSince: jest
+          .fn()
+          .mockResolvedValue([pendingAt(7, OLD), pendingAt(8, OLD)]),
+        markResolved,
+      } as never,
+      buildConfig('true'),
+      buildAgentRun(),
+      {
+        countByPayloadValue: jest
+          .fn()
+          .mockImplementation(async ({ payloadValue }) =>
+            payloadValue === 8 ? 1 : 0,
+          ),
+      } as never,
+    );
+    expect(await task.run(ctx)).toEqual({ skip: true });
+    expect(markResolved).toHaveBeenCalledTimes(1);
+    expect(markResolved).toHaveBeenCalledWith(7, 'EXPIRED');
+    // 8 은 카드가 있어 가드에 남으므로 신호 수집까지 가지 않는다.
+    expect(collect).not.toHaveBeenCalled();
+  });
+
+  // 같은 그룹 실행이 겹치면(stalled 재큐) 앞 실행이 아직 카드를 만들기 전일 수 있다.
+  it('만들어진 지 6시간이 안 된 제안은 카드가 없어도 닫지 않고 가드에 남긴다', async () => {
+    const collect = jest.fn();
+    const markResolved = jest.fn();
+    const countByPayloadValue = jest.fn().mockResolvedValue(0);
+    const task = new PreferenceLearningAutopilotTask(
+      { collect } as never,
+      { infer: jest.fn() } as never,
+      { findActive: jest.fn() } as never,
+      {
+        createPending: jest.fn(),
+        findPendingSince: jest.fn().mockResolvedValue([pendingAt(7, FRESH)]),
+        markResolved,
+      } as never,
+      buildConfig('true'),
+      buildAgentRun(),
+      { countByPayloadValue } as never,
+    );
+    expect(await task.run(ctx)).toEqual({ skip: true });
+    expect(markResolved).not.toHaveBeenCalled();
+    expect(countByPayloadValue).not.toHaveBeenCalled();
+    expect(collect).not.toHaveBeenCalled();
+  });
+
+  it('PENDING 제안이 모두 카드 없는 것이면 닫은 뒤 이번 회차를 이어 간다', async () => {
+    const collect = jest.fn().mockResolvedValue([]);
+    const markResolved = jest.fn();
+    const task = new PreferenceLearningAutopilotTask(
+      { collect } as never,
+      { infer: jest.fn() } as never,
+      { findActive: jest.fn().mockResolvedValue(null) } as never,
+      {
+        createPending: jest.fn(),
+        findPendingSince: jest.fn().mockResolvedValue([pendingAt(7, OLD)]),
+        markResolved,
+      } as never,
+      buildConfig('true'),
+      buildAgentRun(),
+      { countByPayloadValue: jest.fn().mockResolvedValue(0) } as never,
+    );
+    await task.run(ctx);
+    expect(markResolved).toHaveBeenCalledWith(7, 'EXPIRED');
+    expect(collect).toHaveBeenCalled();
   });
 
   it('신호 0 → infer 미호출, skip', async () => {
@@ -52,10 +151,11 @@ describe('PreferenceLearningAutopilotTask', () => {
       { findActive: jest.fn().mockResolvedValue(null) } as never,
       {
         createPending: jest.fn(),
-        countPendingSince: jest.fn().mockResolvedValue(0),
+        findPendingSince: jest.fn().mockResolvedValue([]),
       } as never,
       buildConfig('true'),
       buildAgentRun(),
+      {} as never,
     );
     expect(await task.run(ctx)).toEqual({ skip: true });
     expect(infer).not.toHaveBeenCalled();
@@ -82,10 +182,11 @@ describe('PreferenceLearningAutopilotTask', () => {
       } as never,
       {
         createPending: jest.fn().mockResolvedValue(11),
-        countPendingSince: jest.fn().mockResolvedValue(0),
+        findPendingSince: jest.fn().mockResolvedValue([]),
       } as never,
       buildConfig('true'),
       buildAgentRun(),
+      {} as never,
     );
     const result = await task.run(ctx);
     expect(result.skip).toBe(false);
@@ -109,10 +210,11 @@ describe('PreferenceLearningAutopilotTask', () => {
       { findActive: jest.fn().mockResolvedValue(null) } as never,
       {
         createPending: jest.fn(),
-        countPendingSince: jest.fn().mockResolvedValue(0),
+        findPendingSince: jest.fn().mockResolvedValue([]),
       } as never,
       buildConfig('true'),
       buildAgentRun(),
+      {} as never,
     );
     expect(await task.run(ctx)).toEqual({ skip: true });
   });
@@ -136,10 +238,11 @@ describe('PreferenceLearningAutopilotTask', () => {
       { findActive: jest.fn().mockResolvedValue(null) } as never,
       {
         createPending: jest.fn(),
-        countPendingSince: jest.fn().mockResolvedValue(0),
+        findPendingSince: jest.fn().mockResolvedValue([]),
       } as never,
       buildConfig('true'),
       buildAgentRun(),
+      {} as never,
     );
     expect(await task.run(ctx)).toEqual({ skip: true });
   });
@@ -165,10 +268,11 @@ describe('PreferenceLearningAutopilotTask', () => {
         } as never,
         {
           createPending: jest.fn().mockResolvedValue(7),
-          countPendingSince: jest.fn().mockResolvedValue(0),
+          findPendingSince: jest.fn().mockResolvedValue([]),
         } as never,
         buildConfig('true'),
         buildAgentRun(execute) as never,
+        {} as never,
       );
 
     it('추론을 원장으로 감싸고 agentType·triggerType·slackUserId 를 남긴다', async () => {

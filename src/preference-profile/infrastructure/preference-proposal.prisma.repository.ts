@@ -3,6 +3,8 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateProposalInput,
+  FindPendingSinceInput,
+  PendingProposalRef,
   PreferenceProposalRecord,
   PreferenceProposalRepositoryPort,
 } from '../domain/port/preference-proposal.repository.port';
@@ -78,16 +80,17 @@ export class PreferenceProposalPrismaRepository implements PreferenceProposalRep
     }));
   }
 
-  async countPendingSince(
-    ownerUserId: string,
-    sinceMs: number,
-  ): Promise<number> {
-    return this.prisma.preferenceProposal.count({
+  async findPendingSince({
+    ownerUserId,
+    sinceMs,
+  }: FindPendingSinceInput): Promise<PendingProposalRef[]> {
+    return this.prisma.preferenceProposal.findMany({
       where: {
         ownerUserId,
         status: 'PENDING',
         createdAt: { gte: new Date(sinceMs) },
       },
+      select: { id: true, createdAt: true },
     });
   }
 }
