@@ -71,7 +71,7 @@ export class PreferenceLearningAutopilotTask implements AutopilotTask {
     );
     if (pending > 0) {
       this.logger.log(
-        `skip — 최근 7일 PENDING 제안 ${pending}건 (쿼터 가드). 무응답 만료 카드는 PENDING 으로 남아 다음 회차까지 막을 수 있음`,
+        `skip — 최근 7일 PENDING 제안 ${pending}건 (쿼터 가드). 무응답 카드는 preview-sweeper 가 매시간 EXPIRED 로 닫아 가드에서 빠진다`,
       );
       return { skip: true };
     }
