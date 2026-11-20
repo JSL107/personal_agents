@@ -136,20 +136,44 @@ const loadEligibleRuns = async (): Promise<EligibleRun[]> => {
   });
 };
 
-// 첫 번째 답을 운영 원문으로 쓰므로 원문이 없는 회차는 잴 수 없다. 뺀 회차를 사유와 함께 남긴다.
+// 첫 번째 답을 운영 원문으로 쓰므로 원문이 없는 회차는 잴 수 없다. 운영은 route() 라 Claude 로
+// 폴백했을 수 있는데, 재호출은 codex 뿐이라 그 회차는 모델 차이가 섞인다. 뺀 회차를 사유와 함께 남긴다.
 interface LedgerAnsweredRun extends EligibleRun {
   modelResponse: string;
 }
 
-const withLedgerAnswer = (runs: EligibleRun[]): LedgerAnsweredRun[] => {
+const withLedgerAnswer = async (
+  runs: EligibleRun[],
+): Promise<LedgerAnsweredRun[]> => {
+  const codexAnswered = new Set(
+    (
+      await prisma.modelCall.findMany({
+        where: {
+          agentRunId: { in: runs.map((run) => run.runId) },
+          status: 'SUCCEEDED',
+          provider: 'CHATGPT',
+          fallbackUsed: false,
+        },
+        select: { agentRunId: true },
+      })
+    ).map((call) => call.agentRunId),
+  );
   const missing = runs.filter((run) => run.modelResponse === null);
-  if (missing.length > 0) {
-    console.log(
-      `제외 ${missing.length}회차 — model_response 없음(#738 이전 회차): ${missing.map((run) => run.runId).join(', ')}`,
-    );
+  const notCodex = runs.filter(
+    (run) => run.modelResponse !== null && !codexAnswered.has(run.runId),
+  );
+  for (const [reason, excluded] of [
+    ['model_response 없음(#738 이전 회차)', missing],
+    ['운영 답이 codex 성공 응답이 아님(폴백·기록 없음)', notCodex],
+  ] as const) {
+    if (excluded.length > 0) {
+      console.log(
+        `제외 ${excluded.length}회차 — ${reason}: ${excluded.map((run) => run.runId).join(', ')}`,
+      );
+    }
   }
   return runs.flatMap((run) =>
-    run.modelResponse === null
+    run.modelResponse === null || !codexAnswered.has(run.runId)
       ? []
       : [{ ...run, modelResponse: run.modelResponse }],
   );
@@ -222,7 +246,7 @@ const appendRecord = (file: string, record: SampleRecord): void => {
 };
 
 const runSample = async (stage: Stage, file: string): Promise<void> => {
-  const runs = withLedgerAnswer(await loadEligibleRuns());
+  const runs = await withLedgerAnswer(await loadEligibleRuns());
   // 파일럿은 파싱·격리 점검용이라 가장 오래된 회차 하나만 부른다. 절차가 본 측정과 같으므로
   // 같은 파일로 1·2단계를 돌리면 그 답은 해당 칸에 그대로 재사용된다(다시 부르지 않는다).
   const targets = stage === 'pilot' ? runs.slice(0, 1) : runs;
@@ -306,7 +330,10 @@ const answerOf = (text: string, run: EligibleRun): ReplayAnswer => {
 
 const runReport = async (file: string): Promise<void> => {
   const runs = new Map(
-    withLedgerAnswer(await loadEligibleRuns()).map((run) => [run.runId, run]),
+    (await withLedgerAnswer(await loadEligibleRuns())).map((run) => [
+      run.runId,
+      run,
+    ]),
   );
   // 같은 칸을 다시 돌렸으면 마지막 성공을 쓴다. 1번 칸은 파일에 있어도(원문 도입 전 파일) 버린다.
   const textByCell = new Map<string, { runId: number; text: string }>();
