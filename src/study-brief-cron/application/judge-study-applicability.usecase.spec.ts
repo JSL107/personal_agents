@@ -27,10 +27,8 @@ const setup = (keywords: string[], modelText?: string) => {
   } as unknown as jest.Mocked<StudyBriefRepositoryPort>;
   const buildCodeGraph = {
     execute: jest.fn().mockResolvedValue({
-      version: 1,
       rootDir: '/r',
       builtAt: '',
-      relations: [],
       chunks: [
         {
           filePath: 'model-router/a.ts',
@@ -99,10 +97,8 @@ describe('JudgeStudyApplicabilityUsecase', () => {
       'hook',
     ]);
     buildCodeGraph.execute = jest.fn().mockResolvedValue({
-      version: 1,
       rootDir: '/r',
       builtAt: '',
-      relations: [],
       chunks: [],
     });
     await expect(
