@@ -14,6 +14,7 @@ import {
   PreferenceProfileRepositoryPort,
 } from '../../../preference-profile/domain/port/preference-profile.repository.port';
 import {
+  PendingProposalRef,
   PREFERENCE_PROPOSAL_REPOSITORY,
   PreferenceProposalRepositoryPort,
 } from '../../../preference-profile/domain/port/preference-proposal.repository.port';
@@ -32,6 +33,10 @@ import {
 
 const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const SIGNAL_CAP = 30;
+// 이보다 젊은 제안은 카드가 없어도 고아로 보지 않는다. 같은 그룹 실행은 겹칠 수 있어(슬롯 가드는 완주한
+// 슬롯만 막는다 — autopilot.orchestrator.ts 진입 가드 주석), 앞 실행이 카드를 만들기 전일 수 있다.
+// 한 실행은 길어도 30분 남짓이고 다음 회차는 7일 뒤라 그 사이 어디든 되는데, 넉넉히 6시간으로 둔다.
+const ORPHAN_GRACE_MS = 6 * 60 * 60 * 1000;
 
 // execute 가 던지는 예외는 두 종류다 — run 콜백의 추론 실패(모델 호출/파싱)와, 원장 자체의
 // 저장 실패(begin/finish DB 오류). 후자를 skip 으로 삼키면 orchestrator 의 실패 안내와
@@ -70,9 +75,9 @@ export class PreferenceLearningAutopilotTask implements AutopilotTask {
       return { skip: true };
     }
     const sinceMs = Date.now() - WINDOW_MS;
-    // 쿼터 가드 — 이번 주 승인 카드가 나간 PENDING 제안이 있으면 폭주 방지 skip.
+    // 쿼터 가드 — 이번 주 PENDING 제안(카드 없는 오래된 것은 닫고 뺀다)이 있으면 폭주 방지 skip.
     const pending = await this.closeOrphanProposals(
-      await this.proposalRepository.findPendingIdsSince({
+      await this.proposalRepository.findPendingSince({
         ownerUserId: ownerSlackUserId,
         sinceMs,
       }),
@@ -170,18 +175,24 @@ export class PreferenceLearningAutopilotTask implements AutopilotTask {
   }
 
   // 카드가 한 장도 없는 PENDING 제안은 아무도 답할 수 없다 — 카드 생성 실패, 또는 그룹 발송이 카드
-  // 앞에서 실패해 재시도된 회차가 남긴 것이다. 그대로 두면 sweeper 가 닫을 카드가 없어 7일 동안 가드를
-  // 막는다. EXPIRED 로 닫고(학습 신호에는 안 들어감) 카드가 있는 제안 수만 돌려준다.
-  private async closeOrphanProposals(pendingIds: number[]): Promise<number> {
-    const withCard: number[] = [];
-    for (const id of pendingIds) {
+  // 앞에서 실패해 재시도된 회차가 남긴 것이다. 그대로 두면 sweeper 가 닫을 카드가 없어 다음 회차까지
+  // 가드를 막는다. EXPIRED 로 닫고(학습 신호에는 안 들어감) 가드에 남는 제안 수만 돌려준다.
+  private async closeOrphanProposals(
+    pending: PendingProposalRef[],
+  ): Promise<number> {
+    const blocking: number[] = [];
+    for (const { id, createdAt } of pending) {
+      if (Date.now() - createdAt.getTime() < ORPHAN_GRACE_MS) {
+        blocking.push(id);
+        continue;
+      }
       const cards = await this.previewRepository.countByPayloadValue({
         kind: PREVIEW_KIND.PREFERENCE_PROFILE,
         payloadPath: ['proposalId'],
         payloadValue: id,
       });
       if (cards > 0) {
-        withCard.push(id);
+        blocking.push(id);
         continue;
       }
       await this.proposalRepository.markResolved(id, 'EXPIRED');
@@ -189,7 +200,7 @@ export class PreferenceLearningAutopilotTask implements AutopilotTask {
         `승인 카드 없는 PENDING 제안 preferenceProposal:${id} 을 EXPIRED 로 닫음`,
       );
     }
-    return withCard.length;
+    return blocking.length;
   }
 
   private isEnabled(): boolean {

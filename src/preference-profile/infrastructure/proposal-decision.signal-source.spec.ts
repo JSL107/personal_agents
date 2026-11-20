@@ -25,7 +25,7 @@ describe('ProposalDecisionSignalSource', () => {
       createPending: jest.fn(),
       findById: jest.fn(),
       markResolved: jest.fn(),
-      findPendingIdsSince: jest.fn(),
+      findPendingSince: jest.fn(),
     };
     const source = new ProposalDecisionSignalSource(repository as never);
     const signals = await source.fetch('U1', Date.now() - 86400_000);
@@ -49,7 +49,7 @@ describe('ProposalDecisionSignalSource', () => {
       createPending: jest.fn(),
       findById: jest.fn(),
       markResolved: jest.fn(),
-      findPendingIdsSince: jest.fn(),
+      findPendingSince: jest.fn(),
     };
     const source = new ProposalDecisionSignalSource(repository as never);
     const signals = await source.fetch('U1', 0);

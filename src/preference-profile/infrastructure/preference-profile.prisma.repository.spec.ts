@@ -65,21 +65,21 @@ describe('PreferenceProposalPrismaRepository', () => {
     },
   });
 
-  it('findPendingIdsSince 는 PENDING status 와 createdAt gte 필터로 id 목록 반환', async () => {
+  it('findPendingSince 는 PENDING status 와 createdAt gte 필터로 id·생성 시각 반환', async () => {
     const { PreferenceProposalPrismaRepository } =
       await import('./preference-proposal.prisma.repository');
     const prisma = buildPrisma();
+    const createdAt = new Date('2026-11-15T03:00:00Z');
     prisma.preferenceProposal.findMany.mockResolvedValue([
-      { id: 5 },
-      { id: 6 },
+      { id: 5, createdAt },
     ]);
     const repo = new PreferenceProposalPrismaRepository(prisma as never);
     const sinceMs = Date.now() - 1000 * 60 * 60;
-    const result = await repo.findPendingIdsSince({
+    const result = await repo.findPendingSince({
       ownerUserId: 'U1',
       sinceMs,
     });
-    expect(result).toEqual([5, 6]);
+    expect(result).toEqual([{ id: 5, createdAt }]);
     expect(prisma.preferenceProposal.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -89,6 +89,7 @@ describe('PreferenceProposalPrismaRepository', () => {
             gte: new Date(sinceMs),
           }),
         }),
+        select: { id: true, createdAt: true },
       }),
     );
   });

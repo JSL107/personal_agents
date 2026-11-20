@@ -15,13 +15,22 @@ const buildAgentRun = (
 
 const ctx = { ownerSlackUserId: 'U1', firedAtKst: '2026-07-05' };
 
+const HOUR_MS = 60 * 60 * 1000;
+// 고아 유예(6시간)를 넘긴 제안과, 아직 앞 실행이 카드를 만드는 중일 수 있는 제안.
+const OLD = 7 * HOUR_MS;
+const FRESH = 10 * 60 * 1000;
+const pendingAt = (id: number, ageMs: number) => ({
+  id,
+  createdAt: new Date(Date.now() - ageMs),
+});
+
 describe('PreferenceLearningAutopilotTask', () => {
   it('게이트 OFF 면 skip', async () => {
     const task = new PreferenceLearningAutopilotTask(
       { collect: jest.fn() } as never,
       { infer: jest.fn() } as never,
       { findActive: jest.fn() } as never,
-      { createPending: jest.fn(), findPendingIdsSince: jest.fn() } as never,
+      { createPending: jest.fn(), findPendingSince: jest.fn() } as never,
       buildConfig('false'),
       buildAgentRun(),
       {} as never,
@@ -39,7 +48,7 @@ describe('PreferenceLearningAutopilotTask', () => {
       { findActive: jest.fn() } as never,
       {
         createPending: jest.fn(),
-        findPendingIdsSince: jest.fn().mockResolvedValue([7]),
+        findPendingSince: jest.fn().mockResolvedValue([pendingAt(7, OLD)]),
         markResolved,
       } as never,
       buildConfig('true'),
@@ -66,7 +75,9 @@ describe('PreferenceLearningAutopilotTask', () => {
       { findActive: jest.fn().mockResolvedValue(null) } as never,
       {
         createPending: jest.fn(),
-        findPendingIdsSince: jest.fn().mockResolvedValue([7, 8]),
+        findPendingSince: jest
+          .fn()
+          .mockResolvedValue([pendingAt(7, OLD), pendingAt(8, OLD)]),
         markResolved,
       } as never,
       buildConfig('true'),
@@ -86,6 +97,30 @@ describe('PreferenceLearningAutopilotTask', () => {
     expect(collect).not.toHaveBeenCalled();
   });
 
+  // 같은 그룹 실행이 겹치면(stalled 재큐) 앞 실행이 아직 카드를 만들기 전일 수 있다.
+  it('만들어진 지 6시간이 안 된 제안은 카드가 없어도 닫지 않고 가드에 남긴다', async () => {
+    const collect = jest.fn();
+    const markResolved = jest.fn();
+    const countByPayloadValue = jest.fn().mockResolvedValue(0);
+    const task = new PreferenceLearningAutopilotTask(
+      { collect } as never,
+      { infer: jest.fn() } as never,
+      { findActive: jest.fn() } as never,
+      {
+        createPending: jest.fn(),
+        findPendingSince: jest.fn().mockResolvedValue([pendingAt(7, FRESH)]),
+        markResolved,
+      } as never,
+      buildConfig('true'),
+      buildAgentRun(),
+      { countByPayloadValue } as never,
+    );
+    expect(await task.run(ctx)).toEqual({ skip: true });
+    expect(markResolved).not.toHaveBeenCalled();
+    expect(countByPayloadValue).not.toHaveBeenCalled();
+    expect(collect).not.toHaveBeenCalled();
+  });
+
   it('PENDING 제안이 모두 카드 없는 것이면 닫은 뒤 이번 회차를 이어 간다', async () => {
     const collect = jest.fn().mockResolvedValue([]);
     const markResolved = jest.fn();
@@ -95,7 +130,7 @@ describe('PreferenceLearningAutopilotTask', () => {
       { findActive: jest.fn().mockResolvedValue(null) } as never,
       {
         createPending: jest.fn(),
-        findPendingIdsSince: jest.fn().mockResolvedValue([7]),
+        findPendingSince: jest.fn().mockResolvedValue([pendingAt(7, OLD)]),
         markResolved,
       } as never,
       buildConfig('true'),
@@ -116,7 +151,7 @@ describe('PreferenceLearningAutopilotTask', () => {
       { findActive: jest.fn().mockResolvedValue(null) } as never,
       {
         createPending: jest.fn(),
-        findPendingIdsSince: jest.fn().mockResolvedValue([]),
+        findPendingSince: jest.fn().mockResolvedValue([]),
       } as never,
       buildConfig('true'),
       buildAgentRun(),
@@ -147,7 +182,7 @@ describe('PreferenceLearningAutopilotTask', () => {
       } as never,
       {
         createPending: jest.fn().mockResolvedValue(11),
-        findPendingIdsSince: jest.fn().mockResolvedValue([]),
+        findPendingSince: jest.fn().mockResolvedValue([]),
       } as never,
       buildConfig('true'),
       buildAgentRun(),
@@ -175,7 +210,7 @@ describe('PreferenceLearningAutopilotTask', () => {
       { findActive: jest.fn().mockResolvedValue(null) } as never,
       {
         createPending: jest.fn(),
-        findPendingIdsSince: jest.fn().mockResolvedValue([]),
+        findPendingSince: jest.fn().mockResolvedValue([]),
       } as never,
       buildConfig('true'),
       buildAgentRun(),
@@ -203,7 +238,7 @@ describe('PreferenceLearningAutopilotTask', () => {
       { findActive: jest.fn().mockResolvedValue(null) } as never,
       {
         createPending: jest.fn(),
-        findPendingIdsSince: jest.fn().mockResolvedValue([]),
+        findPendingSince: jest.fn().mockResolvedValue([]),
       } as never,
       buildConfig('true'),
       buildAgentRun(),
@@ -233,7 +268,7 @@ describe('PreferenceLearningAutopilotTask', () => {
         } as never,
         {
           createPending: jest.fn().mockResolvedValue(7),
-          findPendingIdsSince: jest.fn().mockResolvedValue([]),
+          findPendingSince: jest.fn().mockResolvedValue([]),
         } as never,
         buildConfig('true'),
         buildAgentRun(execute) as never,
