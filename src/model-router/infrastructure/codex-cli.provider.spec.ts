@@ -1037,6 +1037,34 @@ describe('CodexCliProvider readableRoots', () => {
     expect(catPaths).toHaveLength(probedPaths);
   });
 
+  it('부팅 점검이 도는 중에 들어온 호출은 점검 결과를 기다렸다가 막힌다', async () => {
+    mockSandboxCat(() => true);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const provider = new CodexCliProvider();
+    const spawnSpy = stubSpawn(provider as unknown as ProviderWithSpawnCodex);
+
+    provider.onApplicationBootstrap();
+
+    await expect(provider.complete({ prompt: 'p' })).rejects.toBeInstanceOf(
+      CodexReadLockException,
+    );
+    expect(spawnSpy).not.toHaveBeenCalled();
+  });
+
+  it('읽기 경로 요청의 재점검이 실패하면 뒤따르는 일반 호출도 막는다', async () => {
+    mockSandboxCat(() => true);
+    const provider = new CodexCliProvider();
+    const spawnSpy = stubSpawn(provider as unknown as ProviderWithSpawnCodex);
+
+    await expect(
+      provider.complete({ prompt: 'p', readableRoots: ['/var/repo-copy'] }),
+    ).rejects.toBeInstanceOf(CodexReadLockException);
+    await expect(provider.complete({ prompt: 'p' })).rejects.toBeInstanceOf(
+      CodexReadLockException,
+    );
+    expect(spawnSpy).not.toHaveBeenCalled();
+  });
+
   // 점검이 예외로 끝나도 재생 스크립트가 재시도 없이 멈추는 기준(CodexReadLockException)으로 와야 한다.
   it('잠금 점검 자체가 예외로 끝나도 CodexReadLockException 으로 실패한다', async () => {
     jest.spyOn(fsPromises, 'mkdtemp').mockRejectedValue(new Error('ENOSPC'));
