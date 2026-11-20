@@ -23,11 +23,16 @@ export interface CreateProposalInput {
   slackMessageTs?: string;
 }
 
+export interface FindPendingIdsSinceInput {
+  ownerUserId: string;
+  sinceMs: number;
+}
+
 export interface PreferenceProposalRepositoryPort {
   createPending(input: CreateProposalInput): Promise<number>;
   findById(id: number): Promise<PreferenceProposalRecord | null>;
   // EXPIRED 는 무응답 만료 종결 — recentDecisions 가 APPROVED/REJECTED 만 읽으므로 학습
-  // 신호에는 들어가지 않고, countPendingSince 의 쿼터 가드만 풀어준다.
+  // 신호에는 들어가지 않고, findPendingIdsSince 의 쿼터 가드만 풀어준다.
   markResolved(
     id: number,
     status: 'APPROVED' | 'REJECTED' | 'EXPIRED',
@@ -36,5 +41,5 @@ export interface PreferenceProposalRepositoryPort {
     ownerUserId: string,
     sinceMs: number,
   ): Promise<PreferenceProposalRecord[]>;
-  countPendingSince(ownerUserId: string, sinceMs: number): Promise<number>;
+  findPendingIdsSince(input: FindPendingIdsSinceInput): Promise<number[]>;
 }

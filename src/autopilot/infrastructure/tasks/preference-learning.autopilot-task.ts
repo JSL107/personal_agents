@@ -18,6 +18,10 @@ import {
   PreferenceProposalRepositoryPort,
 } from '../../../preference-profile/domain/port/preference-proposal.repository.port';
 import { EMPTY_PROFILE } from '../../../preference-profile/domain/preference-profile.type';
+import {
+  PREVIEW_ACTION_REPOSITORY_PORT,
+  PreviewActionRepositoryPort,
+} from '../../../preview-gate/domain/port/preview-action.repository.port';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import { formatPreferenceProposal } from '../../../slack/format/preference-proposal.formatter';
 import {
@@ -52,6 +56,8 @@ export class PreferenceLearningAutopilotTask implements AutopilotTask {
     private readonly proposalRepository: PreferenceProposalRepositoryPort,
     private readonly configService: ConfigService,
     private readonly agentRunService: AgentRunService,
+    @Inject(PREVIEW_ACTION_REPOSITORY_PORT)
+    private readonly previewRepository: PreviewActionRepositoryPort,
   ) {}
 
   async run({
@@ -64,10 +70,12 @@ export class PreferenceLearningAutopilotTask implements AutopilotTask {
       return { skip: true };
     }
     const sinceMs = Date.now() - WINDOW_MS;
-    // 쿼터 가드 — 이번 주 이미 PENDING 제안 있으면 폭주 방지 skip.
-    const pending = await this.proposalRepository.countPendingSince(
-      ownerSlackUserId,
-      sinceMs,
+    // 쿼터 가드 — 이번 주 승인 카드가 나간 PENDING 제안이 있으면 폭주 방지 skip.
+    const pending = await this.closeOrphanProposals(
+      await this.proposalRepository.findPendingIdsSince({
+        ownerUserId: ownerSlackUserId,
+        sinceMs,
+      }),
     );
     if (pending > 0) {
       this.logger.log(
@@ -159,6 +167,29 @@ export class PreferenceLearningAutopilotTask implements AutopilotTask {
         ),
       },
     };
+  }
+
+  // 카드가 한 장도 없는 PENDING 제안은 아무도 답할 수 없다 — 카드 생성 실패, 또는 그룹 발송이 카드
+  // 앞에서 실패해 재시도된 회차가 남긴 것이다. 그대로 두면 sweeper 가 닫을 카드가 없어 7일 동안 가드를
+  // 막는다. EXPIRED 로 닫고(학습 신호에는 안 들어감) 카드가 있는 제안 수만 돌려준다.
+  private async closeOrphanProposals(pendingIds: number[]): Promise<number> {
+    const withCard: number[] = [];
+    for (const id of pendingIds) {
+      const cards = await this.previewRepository.countByPayloadValue({
+        kind: PREVIEW_KIND.PREFERENCE_PROFILE,
+        payloadPath: ['proposalId'],
+        payloadValue: id,
+      });
+      if (cards > 0) {
+        withCard.push(id);
+        continue;
+      }
+      await this.proposalRepository.markResolved(id, 'EXPIRED');
+      this.logger.log(
+        `승인 카드 없는 PENDING 제안 preferenceProposal:${id} 을 EXPIRED 로 닫음`,
+      );
+    }
+    return withCard.length;
   }
 
   private isEnabled(): boolean {

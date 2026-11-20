@@ -22,7 +22,7 @@ import {
 // 무응답 만료(EXPIRED) → EXPIRED. 사용자가 아무 판단도 내리지 않은 것이라 거부로 쓰면 안 된다
 // (preview-decision.signal-source.ts:45 와 같은 판단). recentDecisions 가 APPROVED/REJECTED 만
 // 읽으므로 EXPIRED 는 학습 신호에서 자동 제외된다. 그럼에도 종결은 해야 한다 — PENDING 으로
-// 남으면 preference-learning 의 쿼터 가드(countPendingSince)가 7일간 새 추론을 막는다.
+// 남으면 preference-learning 의 쿼터 가드(findPendingIdsSince)가 7일간 새 추론을 막는다.
 @Injectable()
 export class PreferenceProfileCanceller implements PreviewCanceller {
   readonly kind = PREVIEW_KIND.PREFERENCE_PROFILE;
