@@ -3,17 +3,11 @@ import { Module } from '@nestjs/common';
 import { BuildCodeGraphUsecase } from './application/build-code-graph.usecase';
 import { CodeGraphQueryUsecase } from './application/code-graph-query.usecase';
 import { CODE_PARSER_PORT } from './domain/port/code-parser.port';
-import { CODE_RELATION_EXTRACTOR_PORT } from './domain/port/code-relation-extractor.port';
-import { CodeGraphSnapshotStore } from './infrastructure/code-graph.snapshot-store';
 import { TreeSitterParser } from './infrastructure/tree-sitter-parser';
-import { TreeSitterRelationExtractor } from './infrastructure/tree-sitter-relation-extractor';
 
 // V3 SOTA Foundation 1.1 — Tree-sitter 기반 Code Graph (Plan: 2026-04-29-tree-sitter-code-graph-poc.md).
-// 단계 1: chunker (CodeParserPort + TreeSitterParser).
-// 단계 2: relation indexer (CodeRelationExtractorPort + TreeSitterRelationExtractor).
-// 단계 3: BuildCodeGraphUsecase + CodeGraphSnapshotStore (인메모리 그래프 + JSON 직렬화).
-// 단계 4: CodeGraphQueryUsecase (4종 query: implementers / callers / extenders / files-affected-by-import).
-// 단계 5 에서 BE-3 통합이 추가된다.
+// chunker (CodeParserPort + TreeSitterParser) → BuildCodeGraphUsecase → CodeGraphQueryUsecase 키워드 검색.
+// 관계 추출·스냅샷 저장·관계 질의 4종은 사용처가 없어 2026-11-20 걷어냈다(git 이력에 남아 있다).
 @Module({
   imports: [],
   providers: [
@@ -21,20 +15,9 @@ import { TreeSitterRelationExtractor } from './infrastructure/tree-sitter-relati
       provide: CODE_PARSER_PORT,
       useClass: TreeSitterParser,
     },
-    {
-      provide: CODE_RELATION_EXTRACTOR_PORT,
-      useClass: TreeSitterRelationExtractor,
-    },
     BuildCodeGraphUsecase,
     CodeGraphQueryUsecase,
-    CodeGraphSnapshotStore,
   ],
-  exports: [
-    CODE_PARSER_PORT,
-    CODE_RELATION_EXTRACTOR_PORT,
-    BuildCodeGraphUsecase,
-    CodeGraphQueryUsecase,
-    CodeGraphSnapshotStore,
-  ],
+  exports: [CODE_PARSER_PORT, BuildCodeGraphUsecase, CodeGraphQueryUsecase],
 })
 export class CodeGraphModule {}

@@ -5,21 +5,13 @@ import { join, relative } from 'node:path';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { CodeChunk } from '../domain/code-chunk.type';
-import {
-  CODE_GRAPH_SNAPSHOT_VERSION,
-  CodeGraphSnapshot,
-} from '../domain/code-graph.type';
-import { CodeRelation } from '../domain/code-relation.type';
+import { CodeGraphSnapshot } from '../domain/code-graph.type';
 import {
   CODE_PARSER_PORT,
   CodeParserPort,
 } from '../domain/port/code-parser.port';
-import {
-  CODE_RELATION_EXTRACTOR_PORT,
-  CodeRelationExtractorPort,
-} from '../domain/port/code-relation-extractor.port';
 
-// V3 SOTA Foundation 1.1 단계 3 — rootDir 의 .ts 파일을 읽어 chunks + relations snapshot 빌드.
+// V3 SOTA Foundation 1.1 단계 3 — rootDir 의 .ts 파일을 읽어 chunks snapshot 빌드.
 // glob 라이브러리 의존성 없이 fs.readdir({recursive:true}) (Node 20.1+) 사용.
 //
 // 기본 exclude: spec / node_modules / dist / var. 추후 .gitignore 통합 가능 (단계 4 query 시 fine-tune).
@@ -39,23 +31,17 @@ export class BuildCodeGraphUsecase {
   constructor(
     @Inject(CODE_PARSER_PORT)
     private readonly parser: CodeParserPort,
-    @Inject(CODE_RELATION_EXTRACTOR_PORT)
-    private readonly extractor: CodeRelationExtractorPort,
   ) {}
 
   async execute({ rootDir }: { rootDir: string }): Promise<CodeGraphSnapshot> {
     const files = await this.findTsFiles(rootDir);
     const chunks: CodeChunk[] = [];
-    const relations: CodeRelation[] = [];
 
     for (const absPath of files) {
       const relPath = relative(rootDir, absPath);
       try {
         const source = await readFile(absPath, 'utf8');
         chunks.push(...this.parser.parseFile({ filePath: relPath, source }));
-        relations.push(
-          ...this.extractor.extractRelations({ filePath: relPath, source }),
-        );
       } catch (error: unknown) {
         // 한 파일 파싱 실패가 전체 build 를 끊지 않도록 graceful — 단계 5 BE-3 통합 시 안정성 중요.
         this.logger.warn(
@@ -65,11 +51,9 @@ export class BuildCodeGraphUsecase {
     }
 
     return {
-      version: CODE_GRAPH_SNAPSHOT_VERSION,
       rootDir,
       builtAt: new Date().toISOString(),
       chunks,
-      relations,
     };
   }
 

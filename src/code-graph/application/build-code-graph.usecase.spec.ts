@@ -2,9 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { CODE_GRAPH_SNAPSHOT_VERSION } from '../domain/code-graph.type';
 import { TreeSitterParser } from '../infrastructure/tree-sitter-parser';
-import { TreeSitterRelationExtractor } from '../infrastructure/tree-sitter-relation-extractor';
 import { BuildCodeGraphUsecase } from './build-code-graph.usecase';
 
 describe('BuildCodeGraphUsecase', () => {
@@ -13,17 +11,14 @@ describe('BuildCodeGraphUsecase', () => {
 
   beforeEach(async () => {
     rootDir = await mkdtemp(join(tmpdir(), 'code-graph-build-'));
-    usecase = new BuildCodeGraphUsecase(
-      new TreeSitterParser(),
-      new TreeSitterRelationExtractor(),
-    );
+    usecase = new BuildCodeGraphUsecase(new TreeSitterParser());
   });
 
   afterEach(async () => {
     await rm(rootDir, { recursive: true, force: true });
   });
 
-  it('rootDir 의 .ts 파일에서 chunks + relations 를 모은다', async () => {
+  it('rootDir 의 .ts 파일에서 chunks 를 모은다', async () => {
     await mkdir(join(rootDir, 'foo'), { recursive: true });
     await writeFile(
       join(rootDir, 'foo/service.ts'),
@@ -36,16 +31,10 @@ describe('BuildCodeGraphUsecase', () => {
 
     const snapshot = await usecase.execute({ rootDir });
 
-    expect(snapshot.version).toBe(CODE_GRAPH_SNAPSHOT_VERSION);
     expect(snapshot.rootDir).toBe(rootDir);
     expect(snapshot.builtAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(snapshot.chunks.find((c) => c.name === 'FooService')).toBeDefined();
     expect(snapshot.chunks.find((c) => c.name === 'Base')).toBeDefined();
-    expect(
-      snapshot.relations.find(
-        (r) => r.kind === 'extends' && r.from === 'FooService',
-      ),
-    ).toBeDefined();
   });
 
   it('.spec.ts / .d.ts / node_modules / dist / var 디렉터리는 제외', async () => {
@@ -74,7 +63,7 @@ describe('BuildCodeGraphUsecase', () => {
     expect(names).not.toContain('SkipVar');
   });
 
-  it('chunk.filePath / relation.from 은 rootDir 상대경로', async () => {
+  it('chunk.filePath 는 rootDir 상대경로', async () => {
     await mkdir(join(rootDir, 'sub'), { recursive: true });
     await writeFile(
       join(rootDir, 'sub/foo.ts'),
@@ -85,10 +74,6 @@ describe('BuildCodeGraphUsecase', () => {
 
     const fooChunk = snapshot.chunks.find((c) => c.name === 'Foo');
     expect(fooChunk?.filePath).toBe(join('sub', 'foo.ts'));
-    const importRel = snapshot.relations.find(
-      (r) => r.kind === 'imports' && r.from === join('sub', 'foo.ts'),
-    );
-    expect(importRel).toBeDefined();
   });
 
   it('파싱 실패 파일은 skip 하고 나머지는 진행 (graceful)', async () => {
