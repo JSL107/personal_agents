@@ -19,6 +19,9 @@ import { INSIGHT_LOOKBACK_MINUTES } from './snapshot-window.policy';
 export const MIN_SAMPLES = 6;
 export const MIN_VIEWS = 60;
 export const MIN_DIFF_POINTS = 6;
+// 새 릴스는 먼저 약 100명에게 보인다. 판정과 같은 3일 도달(11-05~11-20, 조회 60 이상 12편)이 중앙값 107, 11편이 100~152, 11-08 만 293이었다.
+// 이를 넘으면 노출이 넓어진 것으로 본다(PR #1056 리뷰: 24시간 자료로 정했던 근거를 같은 시점으로 맞춤).
+export const REACH_BREAKOUT = 150;
 export const P_THRESHOLD = 0.05;
 export const WATCH_GUARD_MS = 400;
 export const PUBLISH_GAP_POINTS = 15;
@@ -82,6 +85,13 @@ export interface ScoredSample {
   arm: 'champion' | 'challenger';
   skipRate: number;
   avgWatchMs: number | null;
+  // 판정에는 쓰지 않는 참고값. 도달 필드가 생기기 전 원장 행에는 없다.
+  reach?: number | null;
+}
+export interface ReachSummary {
+  n: number;
+  meanReach: number | null;
+  breakouts: number;
 }
 export enum ExclusionReason {
   LOST = 'lost',
@@ -277,6 +287,7 @@ export const collectSamples = ({
       arm,
       skipRate: score.skipRate,
       avgWatchMs: score.avgWatchMs,
+      reach: score.reach,
     });
   }
   collection.publishRates = countPublishRates({
@@ -548,6 +559,7 @@ export const checkWorstGuard = ({
       arm: record.arm,
       skipRate: score.skipRate,
       avgWatchMs: score.avgWatchMs,
+      reach: score.reach,
     });
   }
   if (selected.length < WORST_GUARD_SAMPLES) {
@@ -683,6 +695,7 @@ const isPublishedDailyPost = (
 interface SnapshotScore {
   skipRate: number;
   avgWatchMs: number | null;
+  reach: number | null;
 }
 const scoreSnapshot = ({
   snapshot,
@@ -694,7 +707,7 @@ const scoreSnapshot = ({
   if (snapshot.error) {
     return ExclusionReason.ERROR;
   }
-  const { skipRate, avgWatchMs, views } = snapshot.metrics;
+  const { skipRate, avgWatchMs, views, reach } = snapshot.metrics;
   if (skipRate === null || !Number.isFinite(skipRate)) {
     return ExclusionReason.SKIP_NULL;
   }
@@ -706,7 +719,8 @@ const scoreSnapshot = ({
   }
   const safeWatch =
     avgWatchMs !== null && Number.isFinite(avgWatchMs) ? avgWatchMs : null;
-  return { skipRate, avgWatchMs: safeWatch };
+  const safeReach = reach !== null && Number.isFinite(reach) ? reach : null;
+  return { skipRate, avgWatchMs: safeWatch, reach: safeReach };
 };
 const exclusionReason = ({
   post,
@@ -931,3 +945,23 @@ const toCandidate = ({
   challenger,
   id: `${knob}=${JSON.stringify(challenger)}`,
 });
+
+// 군별 3일 도달 요약. 판정은 스킵률로 하고 이것은 보고·플래너 참고용이다(도달이 첫 노출을 넘는 일이 드물어 6편으로는 검정이 안 된다).
+export const summarizeReach = ({
+  samples,
+  arm,
+}: {
+  samples: ScoredSample[];
+  arm: ScoredSample['arm'];
+}): ReachSummary => {
+  const reaches = samples.flatMap((sample) =>
+    sample.arm === arm &&
+    typeof sample.reach === 'number' &&
+    Number.isFinite(sample.reach)
+      ? [sample.reach]
+      : [],
+  );
+  const meanReach = meanNullable(reaches);
+  const breakouts = reaches.filter((reach) => reach >= REACH_BREAKOUT).length;
+  return { n: reaches.length, meanReach, breakouts };
+};
