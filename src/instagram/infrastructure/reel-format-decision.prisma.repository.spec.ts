@@ -126,6 +126,29 @@ describe('ReelFormatDecisionPrismaRepository', () => {
     expect(rows[0].aiProposal).toEqual(proposal);
   });
 
+  it('손잡이를 더하기 전 판정의 policyAfter 는 빠진 손잡이를 채워 읽는다', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        ...row,
+        id: 'row-old',
+        reportedAt: null,
+        createdAt: new Date('2026-11-09T00:00:00Z'),
+        aiProposal: null,
+        policyAfter: { ...row.policyAfter, champion: { early_card: false } },
+      },
+    ]);
+    const repository = new ReelFormatDecisionPrismaRepository({
+      reelFormatDecision: { findMany },
+    } as unknown as PrismaService);
+
+    const rows = await repository.listAll();
+
+    expect(rows[0].policyAfter.champion).toEqual({
+      ...DEFAULT_FORMAT_VALUES,
+      early_card: false,
+    });
+  });
+
   it('삽입 결과로 생성된 원장 행을 반환한다', async () => {
     const created = {
       ...row,

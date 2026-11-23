@@ -1,6 +1,7 @@
 import {
   assignArm,
   DEFAULT_FORMAT_VALUES,
+  fillMissingKnobs,
   FormatKnob,
   FormatPolicy,
   parseIsoDate,
@@ -65,5 +66,41 @@ describe('format-policy', () => {
 
   it('정책을 고정 키 순서와 개행으로 직렬화한다', () => {
     expect(serializePolicy(policy)).toBe(`${JSON.stringify(policy)}\n`);
+  });
+});
+
+describe('fillMissingKnobs', () => {
+  it('아는 손잡이만 있으면 빠진 것을 기본값으로 채우고 기존 값과 실험은 그대로 둔다', () => {
+    const old = {
+      version: 1,
+      frozen: false,
+      champion: { early_card: true },
+      experiment: null,
+    };
+    const filled = fillMissingKnobs(old);
+    expect(filled).toEqual({
+      ...old,
+      champion: { ...DEFAULT_FORMAT_VALUES, early_card: true },
+    });
+    expect(policyProblem(filled)).toBe('');
+    expect(old.champion).toEqual({ early_card: true });
+  });
+  it('모르는 손잡이가 섞였거나 모양이 다르면 손대지 않아 거부되게 둔다', () => {
+    const unknown = {
+      ...policy,
+      champion: { early_card: false, color: 'red' },
+    };
+    expect(fillMissingKnobs(unknown)).toBe(unknown);
+    expect(policyProblem(fillMissingKnobs(unknown))).toBe('champion');
+    for (const value of [null, [], 'broken', { ...policy, champion: [] }]) {
+      expect(fillMissingKnobs(value)).toBe(value);
+    }
+  });
+  it('처음부터 있던 early_card 가 없으면 손상으로 보고 채우지 않는다', () => {
+    for (const champion of [{}, { segments: 2 }]) {
+      const damaged = { ...policy, champion };
+      expect(fillMissingKnobs(damaged)).toBe(damaged);
+      expect(policyProblem(fillMissingKnobs(damaged))).toBe('champion');
+    }
   });
 });

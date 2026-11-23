@@ -37,6 +37,26 @@ describe('FormatPolicyFileStore', () => {
   it('파일이 없으면 missing을 반환한다', async () => {
     expect(await store.read()).toEqual({ kind: 'missing' });
   });
+  it('손잡이를 더하기 전 모양의 정책은 빠진 손잡이를 기본값으로 채워 읽는다', async () => {
+    await writeFile(
+      join(root, 'format-policy.json'),
+      '{"version":1,"frozen":false,"champion":{"early_card":false},"experiment":{"id":"early_card-2026-11-11","knob":"early_card","challenger":true,"start":"2026-11-11"}}',
+    );
+    expect(await store.read()).toEqual({
+      kind: 'ok',
+      policy: {
+        version: 1,
+        frozen: false,
+        champion: { ...DEFAULT_FORMAT_VALUES, early_card: false },
+        experiment: {
+          id: 'early_card-2026-11-11',
+          knob: 'early_card',
+          challenger: true,
+          start: '2026-11-11',
+        },
+      },
+    });
+  });
   it.each([
     '{',
     '{"version":1,',

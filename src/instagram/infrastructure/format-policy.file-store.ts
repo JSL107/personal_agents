@@ -7,6 +7,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import {
+  fillMissingKnobs,
   FormatPolicy,
   isFormatPolicy,
   policyProblem,
@@ -52,7 +53,7 @@ export class FormatPolicyFileStore implements FormatPolicyStorePort {
       if (versionTokens.length !== 1 || !/^-?\d+$/.test(versionTokens[0][1])) {
         return { kind: 'broken', reason: 'version은 정수 토큰이어야 합니다' };
       }
-      const value: unknown = JSON.parse(raw);
+      const value = fillMissingKnobs(JSON.parse(raw));
       if (!isFormatPolicy(value)) {
         return { kind: 'broken', reason: policyProblem(value) };
       }
