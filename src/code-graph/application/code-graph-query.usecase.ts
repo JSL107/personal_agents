@@ -22,19 +22,24 @@ export class CodeGraphQueryUsecase {
     keywords: readonly string[];
     limit: number;
   }): KeywordCandidate[] {
+    const nameTokens = snapshot.chunks.map((chunk) =>
+      tokenizeIdentifier(chunk.name),
+    );
     // 모델이 식별자를 통째로 줘 소문자로 붙은 키워드(buildcodexpermissionargs)도 이름 일치로 치려고
-    // 낱말을 이어 붙인 전체 이름을 함께 넣는다. 부분 연속 일치는 오탐이 늘어 넣지 않는다.
-    const nameTokens = snapshot.chunks.map((chunk) => {
-      const tokens = tokenizeIdentifier(chunk.name);
-      // 낱말이 하나 이하면 이어 붙여도 같거나 빈 문자열이라 `--` 같은 키워드가 걸리지 않게 뺀다.
-      return new Set(tokens.length > 1 ? [...tokens, tokens.join('')] : tokens);
-    });
+    // 낱말을 이어 붙인 전체 이름을 점수용 집합에만 넣는다. 부분 연속 일치는 오탐이 늘어 넣지 않는다.
+    // 낱말이 하나 이하면 이어 붙여도 같거나 빈 문자열이라 `--` 같은 키워드가 걸리지 않게 뺀다.
+    const nameKeys = nameTokens.map(
+      (tokens) =>
+        new Set(tokens.length > 1 ? [...tokens, tokens.join('')] : tokens),
+    );
+    const tokenSets = nameTokens.map((tokens) => new Set(tokens));
     const commonThreshold = snapshot.chunks.length * COMMON_TOKEN_RATIO;
+    // 흔한 "낱말" 만 뺀다. 전체 이름까지 세면 작은 스냅샷에서 이전에 본문으로 찾던 키워드가 사라진다.
     const usable = uniq(
       keywords.map((keyword) => keyword.toLowerCase()),
     ).filter(
       (keyword) =>
-        nameTokens.filter((tokens) => tokens.has(toNameKey(keyword))).length <
+        tokenSets.filter((tokens) => tokens.has(keyword)).length <
         Math.max(commonThreshold, 2),
     );
     if (usable.length === 0) {
@@ -50,7 +55,7 @@ export class CodeGraphQueryUsecase {
         score: usable.reduce(
           (sum, keyword, keywordIndex) =>
             sum +
-            (nameTokens[index].has(toNameKey(keyword)) ? 10 : 0) +
+            (nameKeys[index].has(toNameKey(keyword)) ? 10 : 0) +
             (sourcePatterns[keywordIndex].test(chunk.source) ? 1 : 0),
           0,
         ),

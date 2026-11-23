@@ -111,6 +111,39 @@ describe('CodeGraphQueryUsecase', () => {
       ]);
     });
 
+    it('전체 이름 일치에 본문 점수가 더해지면 낱말 일치 후보를 제치고 상한 안에 든다', () => {
+      const splits = Array.from({ length: 12 }, (_, index) =>
+        chunk(`splitItems${index}`),
+      );
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([
+          ...splits,
+          chunk('IntentClassifierUsecase', 'class', 'run(priorTurns)'),
+          ...filler(700),
+        ]),
+        keywords: ['split', 'intentclassifierusecase', 'priorturns'],
+        limit: 12,
+      });
+      expect(result).toHaveLength(12);
+      expect([result[0].name, result[0].score]).toEqual([
+        'IntentClassifierUsecase',
+        11,
+      ]);
+    });
+
+    it('같은 전체 이름이 여러 조각에 있어도 2% 필터가 키워드를 지우지 않는다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([
+          chunk('runAll', 'function', 'runAll()'),
+          chunk('runAll', 'method', 'runAll()'),
+          ...filler(98),
+        ]),
+        keywords: ['runall'],
+        limit: 12,
+      });
+      expect(result.map((candidate) => candidate.score)).toEqual([11, 11]);
+    });
+
     it('기호만 있는 키워드는 낱말이 없는 이름과 맞지 않는다', () => {
       const result = usecase.findChunksByKeywords({
         snapshot: snapshotOf([chunk('_'), ...filler(100)]),
