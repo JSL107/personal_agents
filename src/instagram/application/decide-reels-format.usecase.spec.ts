@@ -168,6 +168,7 @@ const scoredPosts = (): {
         views: 100,
         skipRate: assignment.arm === 'champion' ? 80 : 60,
         avgWatchMs: 2500,
+        reach: assignment.arm === 'champion' ? 100 : 200,
       },
       followersCount: null,
       error: null,
@@ -393,6 +394,22 @@ describe('DecideReelsFormatUsecase', () => {
     );
     expect(report?.text).toContain('릴스 형식 판정');
     expect(report?.reportedIds).toContain('saved-after-write-failure');
+  });
+
+  it('다음 실험 제안 입력에 군별 도달 요약을 넘긴다', async () => {
+    const { usecase, decisions, posts, snapshots, planner } = setup();
+    const scored = scoredPosts();
+    posts.listPublishedSince.mockResolvedValue(scored.posts);
+    snapshots.listByPostIds.mockResolvedValue(scored.snapshots);
+    decisions.insert.mockResolvedValue(null);
+
+    await usecase.execute();
+
+    const [input] = planner.propose.mock.calls[0];
+    expect(JSON.parse(input.statsSummary)).toMatchObject({
+      championReach: { n: 6, meanReach: 100, breakouts: 0 },
+      challengerReach: { n: 6, meanReach: 200, breakouts: 6 },
+    });
   });
 
   it('제안 모드의 PROMOTE는 챔피언을 바꾸지 않고 대기열 첫 대결을 연다', async () => {

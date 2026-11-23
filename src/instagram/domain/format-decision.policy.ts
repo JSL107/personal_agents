@@ -19,7 +19,8 @@ import { INSIGHT_LOOKBACK_MINUTES } from './snapshot-window.policy';
 export const MIN_SAMPLES = 6;
 export const MIN_VIEWS = 60;
 export const MIN_DIFF_POINTS = 6;
-// 새 릴스는 먼저 약 100명에게 보인다(11-05~11-21 24시간 도달 중앙값 112, 16편 중 13편이 100~152). 이를 넘으면 노출이 넓어진 것으로 본다.
+// 새 릴스는 먼저 약 100명에게 보인다. 판정과 같은 3일 도달(11-05~11-20, 조회 60 이상 12편)이 중앙값 107, 11편이 100~152, 11-08 만 293이었다.
+// 이를 넘으면 노출이 넓어진 것으로 본다(PR #1056 리뷰: 24시간 자료로 정했던 근거를 같은 시점으로 맞춤).
 export const REACH_BREAKOUT = 150;
 export const P_THRESHOLD = 0.05;
 export const WATCH_GUARD_MS = 400;
