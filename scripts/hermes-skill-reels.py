@@ -456,6 +456,8 @@ def visible_forbidden(text: str) -> bool:
                for char in text)
 
 
+# shortcut: 결과형(result)은 "질문이 아님"으로만 확인해 결과를 단정하지 않는 평서문도 결과형 표본에 섞인다.
+# 결과형이 승격되면 사실 검사처럼 LLM 뜻 판정을 hook_problem 에 더한다(PR #1055 리뷰).
 def is_question(subtitle: str) -> bool:
     """이대리 reel-features.ts 의 QUESTION_ENDING 과 같은 판정."""
     return subtitle.rstrip().endswith("?")

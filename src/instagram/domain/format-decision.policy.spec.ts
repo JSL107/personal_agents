@@ -15,7 +15,11 @@ import {
   SampleCollection,
   ScoredSample,
 } from './format-decision.policy';
-import { DEFAULT_FORMAT_VALUES, FormatPolicy } from './format-policy';
+import {
+  assignArm,
+  DEFAULT_FORMAT_VALUES,
+  FormatPolicy,
+} from './format-policy';
 import { InsightSnapshot, SnapshotWindow } from './instagram-insight.type';
 import { InstagramPost, InstagramPostStatus } from './instagram-post.type';
 
@@ -200,6 +204,24 @@ describe('judgeExperiment', () => {
       judgeExperiment({ policy, samples, today: '2026-11-20' }).verdict,
     ).toBe(ReelFormatVerdict.PROMOTE);
   });
+  it('꼭지 수 실험은 평균 시청이 모두 비어 있어도 시청 누락으로 유지하지 않는다', () => {
+    const samples = collection();
+    samples.champion.forEach((item) => {
+      item.avgWatchMs = null;
+    });
+    const policy: FormatPolicy = {
+      ...POLICY,
+      experiment: {
+        id: 'segments-2026-11-01',
+        knob: 'segments',
+        challenger: 1,
+        start: '2026-11-01',
+      },
+    };
+    expect(
+      judgeExperiment({ policy, samples, today: '2026-11-20' }).verdict,
+    ).toBe(ReelFormatVerdict.PROMOTE);
+  });
   it('평균 시청이 모두 null이면 유지하고 사유를 남긴다', () => {
     const samples = collection();
     samples.champion.forEach((item) => {
@@ -353,6 +375,50 @@ describe('collectSamples', () => {
     });
     expect(result.champion.length + result.challenger.length).toBe(0);
     expect(result.excluded.watch_null).toBe(1);
+  });
+  it('꼭지 수 실험은 평균 시청이 비어 있어도 넘김률 표본으로 센다', () => {
+    const policy: FormatPolicy = {
+      ...POLICY,
+      experiment: {
+        id: 'segments-2026-11-01',
+        knob: 'segments',
+        challenger: 1,
+        start: '2026-11-01',
+      },
+    };
+    const assignment = assignArm({ policy, day: '2026-11-01' });
+    const result = collectSamples({
+      policy,
+      posts: [
+        post('2026-11-01', {
+          features: {
+            experiment: {
+              policyVersion: 1,
+              source: 'policy',
+              experimentId: 'segments-2026-11-01',
+              knob: 'segments',
+              arm: assignment.arm,
+              values: assignment.values,
+              realized: true,
+              checks: {},
+            },
+          } as unknown as InstagramPost['features'],
+        }),
+      ],
+      snapshots: [
+        snapshot('2026-11-01', {
+          metrics: {
+            views: 100,
+            skipRate: 70,
+            avgWatchMs: null,
+          } as InsightSnapshot['metrics'],
+        }),
+      ],
+      today: '2026-11-10',
+      now: new Date('2026-11-20'),
+    });
+    expect(result.champion.length + result.challenger.length).toBe(1);
+    expect(result.excluded.watch_null).toBe(0);
   });
   it('arm과 실현값 불일치를 각각 제외한다', () => {
     const posts = [

@@ -200,6 +200,10 @@ export const permutationPValue = ({
 const bitCount = (mask: number): number =>
   mask.toString(2).replaceAll('0', '').length;
 
+// 꼭지 수는 영상 길이를 바꿔 평균 시청의 기준 자체가 달라진다. 짧은 쪽이 늘 불리해지므로 시청을 표본 조건·가드로 쓰지 않는다(#1001 후속 메모).
+export const watchGuardApplies = (knob: FormatKnob): boolean =>
+  knob !== 'segments';
+
 export const collectSamples = ({
   policy,
   posts,
@@ -246,7 +250,10 @@ export const collectSamples = ({
       }
       continue;
     }
-    const score = scoreSnapshot({ snapshot, requireWatch: true });
+    const score = scoreSnapshot({
+      snapshot,
+      requireWatch: watchGuardApplies(experiment.knob),
+    });
     if (typeof score !== 'object') {
       collection.excluded[score] += 1;
       continue;
@@ -365,11 +372,13 @@ export const judgeExperiment = ({
       challenger: challenger.map((sample) => sample.skipRate),
     });
   }
+  const watchGuarded = watchGuardApplies(policy.experiment.knob);
   const watchMissing =
-    stats.championMeanWatchMs === null || stats.challengerMeanWatchMs === null;
-  // 꼭지 수는 영상 길이를 바꿔 평균 시청의 기준 자체가 달라진다. 짧은 쪽이 늘 불리해지므로 이 가드를 걸지 않는다(#1001 후속 메모).
+    watchGuarded &&
+    (stats.championMeanWatchMs === null ||
+      stats.challengerMeanWatchMs === null);
   const watchGuardPassed =
-    policy.experiment.knob === 'segments' ||
+    !watchGuarded ||
     (stats.championMeanWatchMs !== null &&
       stats.challengerMeanWatchMs !== null &&
       stats.challengerMeanWatchMs >=
