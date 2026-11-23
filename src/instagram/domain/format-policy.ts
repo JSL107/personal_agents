@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { isMatching, P } from 'ts-pattern';
+
 // 값은 format-policy.json 키이자 Python KNOBS 키다(parity spec 이 같은지 본다).
 export enum FormatKnob {
   SEGMENTS = 'segments',
@@ -94,29 +96,25 @@ export const policyProblem = (value: unknown): string => {
 export const isFormatPolicy = (value: unknown): value is FormatPolicy =>
   policyProblem(value) === '';
 
-// 첫 정책부터 모든 정책 파일에 있던 손잡이. 이것이 없으면 옛 모양이 아니라 손상으로 본다.
-const BASE_KNOB = FormatKnob.EARLY_CARD;
-
-// 손잡이를 더하기 전에 저장된 정책은 champion 에 새 손잡이가 없다. 아는 손잡이만 있고 BASE_KNOB 이 있으면 빠진 것을 기본값으로 채운다.
-// 모르는 키가 섞였거나, BASE_KNOB 이 없거나, 모양이 다르면 그대로 돌려줘 policyProblem 이 거부하게 한다(손상을 기본값으로 덮지 않는다).
-// Python fill_missing_knobs 와 같다.
-export const fillMissingKnobs = (value: unknown): unknown => {
-  if (!isPlainObject(value)) {
-    return value;
-  }
-  const champion: unknown = Reflect.get(value, 'champion');
-  if (!isPlainObject(champion)) {
-    return value;
-  }
-  const keys = Object.keys(champion);
-  if (!keys.includes(BASE_KNOB) || !keys.every(isFormatKnob)) {
-    return value;
-  }
-  return { ...value, champion: { ...DEFAULT_FORMAT_VALUES, ...champion } };
+// 실제로 저장된 적 있는 옛 정책 모양: champion 에 아는 손잡이만 있고, 첫 정책부터 늘 있던 early_card 는 있다.
+// 빈 champion·early_card 없는 champion·모르는 키·배열은 옛 모양이 아니라 손상이라 맞지 않는다.
+const OLD_POLICY_SHAPE = {
+  champion: P.intersection(P.record(P.when(isFormatKnob), P._), {
+    [FormatKnob.EARLY_CARD]: P._,
+  }),
 };
-// 타입 가드는 이름 있는 매개변수만 좁힐 수 있어 위치 인자를 쓴다(CODE_RULES §3-11 예외, 아래 hasKeys 와 같다).
-const isPlainObject = (value: unknown): value is object =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+// 손잡이를 더하기 전에 저장된 정책은 champion 에 새 손잡이가 없다. 옛 모양이면 빠진 손잡이를 기본값으로 채운다.
+// 아니면 그대로 돌려줘 policyProblem 이 거부하게 한다(손상을 기본값으로 덮지 않는다). Python fill_missing_knobs 와 같다.
+export const fillMissingKnobs = (value: unknown): unknown => {
+  if (!isMatching(OLD_POLICY_SHAPE, value)) {
+    return value;
+  }
+  return {
+    ...value,
+    champion: { ...DEFAULT_FORMAT_VALUES, ...value.champion },
+  };
+};
 
 const championProblem = (champion: unknown): string => {
   if (!hasKeys(champion, FORMAT_KNOB_NAMES)) {
