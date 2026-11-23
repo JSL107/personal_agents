@@ -1,18 +1,31 @@
 import { createHash } from 'node:crypto';
 
-export const FORMAT_KNOBS = { early_card: [false, true] } as const;
-export const DEFAULT_FORMAT_VALUES = { early_card: false } as const;
+export const FORMAT_KNOBS = {
+  segments: [2, 1],
+  hook_style: ['question', 'result'],
+  early_card: [false, true],
+};
+export type FormatKnob = keyof typeof FORMAT_KNOBS;
+export type FormatKnobValue = boolean | string | number;
+export type FormatValues = Record<FormatKnob, FormatKnobValue>;
+export const DEFAULT_FORMAT_VALUES: Readonly<FormatValues> = {
+  segments: 2,
+  hook_style: 'question',
+  early_card: false,
+};
 const ISO_DATE_LENGTH = 10;
 const DAY_MS = 86_400_000;
 const DAYS_PER_BLOCK = 2;
 const PARITY_MODULUS = 2;
 
-export type FormatKnob = keyof typeof FORMAT_KNOBS;
-export const FORMAT_KNOB_NAMES: readonly FormatKnob[] = ['early_card'];
+// 다음 실험 후보를 이 순서로 고른다. 첫 3초를 크게 바꾸는 축부터(2026-11-23 지표 분석: 도달이 첫 노출 풀에서 멈춘다).
+export const FORMAT_KNOB_NAMES: readonly FormatKnob[] = [
+  'segments',
+  'hook_style',
+  'early_card',
+];
 export const isFormatKnob = (value: string): value is FormatKnob =>
   FORMAT_KNOB_NAMES.some((knob) => knob === value);
-export type FormatKnobValue = boolean | string | number;
-export type FormatValues = Record<FormatKnob, FormatKnobValue>;
 export type FormatExperiment = {
   id: string;
   knob: FormatKnob;

@@ -6,6 +6,7 @@ import {
   ReelFormatDecisionReason,
   ReelFormatVerdict,
 } from '../domain/format-decision.policy';
+import { DEFAULT_FORMAT_VALUES } from '../domain/format-policy';
 import { ReelFormatDecisionInput } from '../domain/port/reel-format-decision.repository.port';
 import { ReelFormatDecisionPrismaRepository } from './reel-format-decision.prisma.repository';
 
@@ -62,7 +63,7 @@ const row: ReelFormatDecisionInput = {
   policyAfter: {
     version: 2,
     frozen: false,
-    champion: { early_card: false },
+    champion: { ...DEFAULT_FORMAT_VALUES, early_card: false },
     experiment: null,
   },
   aiProposal: null,

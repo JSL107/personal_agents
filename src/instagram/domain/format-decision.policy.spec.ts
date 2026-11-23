@@ -15,14 +15,14 @@ import {
   SampleCollection,
   ScoredSample,
 } from './format-decision.policy';
-import { FormatPolicy } from './format-policy';
+import { DEFAULT_FORMAT_VALUES, FormatPolicy } from './format-policy';
 import { InsightSnapshot, SnapshotWindow } from './instagram-insight.type';
 import { InstagramPost, InstagramPostStatus } from './instagram-post.type';
 
 const POLICY: FormatPolicy = {
   version: 1,
   frozen: false,
-  champion: { early_card: false },
+  champion: { ...DEFAULT_FORMAT_VALUES, early_card: false },
   experiment: {
     id: 'early_card-2026-11-01',
     knob: 'early_card',
@@ -182,6 +182,24 @@ describe('judgeExperiment', () => {
       judgeExperiment({ policy: POLICY, samples, today: '2026-11-20' }).reason,
     ).toBe('watch_guard');
   });
+  it('꼭지 수 실험은 영상이 짧아져 시청이 줄어도 시청 가드로 막지 않는다', () => {
+    const samples = collection();
+    samples.challenger.forEach((item) => {
+      item.avgWatchMs = 3000;
+    });
+    const policy: FormatPolicy = {
+      ...POLICY,
+      experiment: {
+        id: 'segments-2026-11-01',
+        knob: 'segments',
+        challenger: 1,
+        start: '2026-11-01',
+      },
+    };
+    expect(
+      judgeExperiment({ policy, samples, today: '2026-11-20' }).verdict,
+    ).toBe(ReelFormatVerdict.PROMOTE);
+  });
   it('평균 시청이 모두 null이면 유지하고 사유를 남긴다', () => {
     const samples = collection();
     samples.champion.forEach((item) => {
@@ -259,7 +277,7 @@ describe('candidate and mode policies', () => {
     });
     const switched: FormatPolicy = {
       ...POLICY,
-      champion: { early_card: true },
+      champion: { ...DEFAULT_FORMAT_VALUES, early_card: true },
     };
     const candidates = listCandidates({ policy: switched, rows: [promoted] });
     expect(candidates.reverseChallenge).toBe(true);
@@ -277,7 +295,7 @@ describe('candidate and mode policies', () => {
             reverseChallenge: true,
           }),
         ],
-      }).candidates,
+      }).candidates.filter((candidate) => candidate.knob === 'early_card'),
     ).toEqual([]);
   });
   it('같은 쌍의 보류와 중단이 연속이면 후보를 제외한다', () => {
@@ -288,7 +306,11 @@ describe('candidate and mode policies', () => {
     expect(listCandidates({ policy: POLICY, rows }).needsHumanReview).toBe(
       true,
     );
-    expect(listCandidates({ policy: POLICY, rows }).candidates).toEqual([]);
+    expect(
+      listCandidates({ policy: POLICY, rows }).candidates.filter(
+        (candidate) => candidate.knob === 'early_card',
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -480,7 +502,10 @@ describe('worst guard', () => {
       verdict: ReelFormatVerdict.PROMOTE,
       mode: ReelFormatDecisionMode.AUTO,
     });
-    const policy: FormatPolicy = { ...POLICY, champion: { early_card: true } };
+    const policy: FormatPolicy = {
+      ...POLICY,
+      champion: { ...DEFAULT_FORMAT_VALUES, early_card: true },
+    };
     const reverse = history({
       experimentId: 'reverse',
       championValue: true,

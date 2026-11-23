@@ -367,11 +367,13 @@ export const judgeExperiment = ({
   }
   const watchMissing =
     stats.championMeanWatchMs === null || stats.challengerMeanWatchMs === null;
+  // 꼭지 수는 영상 길이를 바꿔 평균 시청의 기준 자체가 달라진다. 짧은 쪽이 늘 불리해지므로 이 가드를 걸지 않는다(#1001 후속 메모).
   const watchGuardPassed =
-    stats.championMeanWatchMs !== null &&
-    stats.challengerMeanWatchMs !== null &&
-    stats.challengerMeanWatchMs >=
-      stats.championMeanWatchMs - WATCH_GUARD_MS - EPSILON;
+    policy.experiment.knob === 'segments' ||
+    (stats.championMeanWatchMs !== null &&
+      stats.challengerMeanWatchMs !== null &&
+      stats.challengerMeanWatchMs >=
+        stats.championMeanWatchMs - WATCH_GUARD_MS - EPSILON);
   const significant =
     stats.pValue !== null &&
     stats.skipDifference !== null &&
