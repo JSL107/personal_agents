@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 export const FORMAT_KNOBS = {
   segments: [2, 1],
+  hook_frame: ['none', 'big_text'],
   hook_style: ['question', 'result'],
   early_card: [false, true],
 };
@@ -10,6 +11,7 @@ export type FormatKnobValue = boolean | string | number;
 export type FormatValues = Record<FormatKnob, FormatKnobValue>;
 export const DEFAULT_FORMAT_VALUES: Readonly<FormatValues> = {
   segments: 2,
+  hook_frame: 'none',
   hook_style: 'question',
   early_card: false,
 };
@@ -21,6 +23,7 @@ const PARITY_MODULUS = 2;
 // 다음 실험 후보를 이 순서로 고른다. 첫 3초를 크게 바꾸는 축부터(2026-11-23 지표 분석: 도달이 첫 노출 풀에서 멈춘다).
 export const FORMAT_KNOB_NAMES: readonly FormatKnob[] = [
   'segments',
+  'hook_frame',
   'hook_style',
   'early_card',
 ];

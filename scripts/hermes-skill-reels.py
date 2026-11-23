@@ -126,8 +126,10 @@ LOUDNESS_TARGET, LOUDNESS_TOLERANCE, TRUE_PEAK_MAX = -14.0, 1.0, -1.0
 # 형식 실험(2026-11-09 자가 개선 설계). 정책 파일은 이대리가 쓰고 여기서는 읽기만 한다. 손잡이와 허용 값은 코드가 정한다.
 POLICY_NAME = "format-policy.json"
 # 손잡이 순서는 이대리 쪽 FORMAT_KNOB_NAMES 가 정한다(첫 3초에 큰 축부터, 2026-11-23 지표 분석).
-KNOBS = {"segments": (2, 1), "hook_style": ("question", "result"), "early_card": (False, True)}
-DEFAULT_VALUES = {"segments": 2, "hook_style": "question", "early_card": False}
+KNOBS = {"segments": (2, 1), "hook_frame": ("none", "big_text"), "hook_style": ("question", "result"),
+         "early_card": (False, True)}
+DEFAULT_VALUES = {"segments": 2, "hook_frame": "none", "hook_style": "question", "early_card": False}
+HOOK_FRAME_SEC = 1.5  # big_text 면 이 시각까지 제목 카드·자막 없이 첫 줄만 크게 보인다(2026-11-23 시안 A 채택)
 HOOK_RULES = {
     "question": "시청자가 겪는 상황을 묻는 질문 한 문장으로 시작하고 물음표로 끝낸다(숫자·고유명사로 시작하지 않는다). "
                 "질문에 숨은 주장에도 원문 근거가 있어야 한다.",
@@ -759,13 +761,16 @@ def experiment_record(assignment: dict, timeline: dict, segments: list[dict]) ->
     first_card = cards[0] if cards else None
     early = first_card is not None and first_card <= EARLY_CARD_MAX_SEC
     question = is_question(segments[0]["lines"][0]["subtitle"])
+    hook = timeline.get("hook")
     realized = (early == values["early_card"] and len(segments) == values["segments"]
-                and question == (values["hook_style"] == "question"))
-    return {**assignment, "realized": realized, "checks": {"firstCardSec": first_card, "segmentCount": len(segments)}}
+                and question == (values["hook_style"] == "question")
+                and (hook is not None) == (values["hook_frame"] == "big_text"))
+    return {**assignment, "realized": realized, "checks": {"firstCardSec": first_card, "segmentCount": len(segments),
+                                                           "hookFrameSec": hook["until"] if hook else None}}
 
 
 def build_timeline(lines: list[dict], durations: list[float], sections: list[dict], day: str,
-                   early_card: bool = False) -> dict:
+                   early_card: bool = False, hook_frame: str = "none") -> dict:
     """줄마다 [반응 쉼] → 손짓하며 말하기 → 짧은 쉼. 자막·포인트 카드는 반응이 시작될 때 함께 뜬다(첫 줄 훅이 0.2초부터 보이게).
     말하기 시작 반동은 손짓이 바뀔 때만 준다. 줄마다 주면 같은 '쿵' 이 반복돼 기계적으로 보였다.
     구간(꼭지·정리)이 바뀌는 줄에서 헤더가 바뀐다. 포인트 카드 번호는 꼭지마다 1부터 센다.
@@ -816,7 +821,10 @@ def build_timeline(lines: list[dict], durations: list[float], sections: list[dic
     blinks = [round(b, 2) for b in [1.3 + 3.4 * i for i in range(int(total / 3.4) + 1)] if b < cover_start - 0.2]
     for section in timeline_sections:
         del section["index"]
-    return {"fps": FPS, "duration": round(total, 3), "events": events, "subtitles": subtitles, "points": points,
+    # 첫 3초에 시청자 대부분이 넘긴다(11-23 분석). big_text 는 그 사이 제목 카드와 경쟁하지 않게 첫 줄만 크게 보인다.
+    hook = ({"until": HOOK_FRAME_SEC, "text": lines[0]["subtitle"], "subject": timeline_sections[0]["subject"]}
+            if hook_frame == "big_text" and lines else None)
+    return {"fps": FPS, "duration": round(total, 3), "events": events, "subtitles": subtitles, "points": points, "hook": hook,
             "speech_starts": speech, "walk_in": WALK_SEC, "blinks": blinks, "sections": timeline_sections,
             "cover": {"start": round(cover_start, 3), "end": round(total, 3), "label": f"오늘의 {'·'.join(fields)} 소식",
                       "lines": [section["headline"] for section in sections if section["field"] != "all"]}}
@@ -920,11 +928,11 @@ def check_loudness(path: Path, label: str) -> None:
 
 
 def synthesize(lines: list[dict], sections: list[dict], day: str, workdir: Path, voice_dir: Path | None,
-               segment_count: int, early_card: bool = False) -> tuple[dict, Path]:
+               segment_count: int, early_card: bool = False, hook_frame: str = "none") -> tuple[dict, Path]:
     low, high = range_for(segment_count)
     clips, engine = speak(lines, workdir, voice_dir,
                           lambda durations: build_timeline(lines, durations, sections, day)["duration"], high)
-    timeline = build_timeline(lines, [len(clip) / SAMPLE_RATE for clip in clips], sections, day, early_card)
+    timeline = build_timeline(lines, [len(clip) / SAMPLE_RATE for clip in clips], sections, day, early_card, hook_frame)
     if not low <= timeline["duration"] <= high:
         raise DurationError(timeline["duration"], low, high)
     # 프레임 수와 오디오 길이를 표지 구간까지 포함한 길이로 맞춘다. 렌더러가 -shortest 라 짧으면 표지가 잘린다.
@@ -1205,7 +1213,8 @@ def synthesize_daily(picked: list[list], day: str, workdir: Path, voice_dir: Pat
     for attempt in range(2):
         lines, sections = assemble_lines([(field, segment, row) for field, segment, row, _ in picked])
         try:
-            return synthesize(lines, sections, day, workdir, voice_dir, len(picked), values["early_card"])
+            return synthesize(lines, sections, day, workdir, voice_dir, len(picked), values["early_card"],
+                              values["hook_frame"])
         except DurationError as error:
             if attempt:
                 raise
@@ -1501,6 +1510,10 @@ def self_check() -> None:
     plain_cards = [p["start"] for p in timeline["points"] if p["kind"] in ("point", "number")]
     assert early_cards[0] == min(plain_cards[0], EARLY_CARD_SEC) and early_cards[1:] == plain_cards[1:]
     assert early["subtitles"] == timeline["subtitles"] and early["speech_starts"] == timeline["speech_starts"]
+    # 형식 실험 hook_frame: 첫 줄·대상 이름만 넘기고 자막·음성 시각은 그대로
+    hooked = build_timeline(lines, [2.0] * len(lines), sections, "2026-11-06", hook_frame="big_text")
+    assert timeline["hook"] is None and hooked["subtitles"] == timeline["subtitles"]
+    assert hooked["hook"] == {"until": HOOK_FRAME_SEC, "text": lines[0]["subtitle"], "subject": "OpenAI"}, hooked["hook"]
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         assert load_policy(root)[1] == "default:missing"
@@ -1555,6 +1568,10 @@ def self_check() -> None:
     assert not experiment_record(result_arm, timeline, [seg, seg_dev])["realized"]
     stated = {**seg, "lines": [{**seg["lines"][0], "subtitle": "평가 땐 착하고 실전에선 달라요"}, *seg["lines"][1:]]}
     assert experiment_record(result_arm, timeline, [stated, seg_dev])["realized"]
+    frame_arm = {**challenger, "knob": "hook_frame", "values": {**DEFAULT_VALUES, "hook_frame": "big_text"}}
+    framed = experiment_record(frame_arm, hooked, [seg, seg_dev])
+    assert framed["realized"] and framed["checks"]["hookFrameSec"] == HOOK_FRAME_SEC
+    assert not experiment_record(frame_arm, timeline, [seg, seg_dev])["realized"]
     assert hook_problem(seg, "question") == "" and hook_problem(stated, "question")
     assert hook_problem(stated, "result") == "" and hook_problem(seg, "result")
     assert HOOK_RULES["result"] in build_segment_prompt("AI", {**row, "article": "본문"}, "한 문장", hook_style="result")
@@ -1625,7 +1642,7 @@ def self_check() -> None:
         if status == "제작중" and fail["status_done"]:
             raise RuntimeError("Notion 오류")
 
-    def fake_synth(lines_, sections_, day, workdir, voice_dir, count, early_card=False):
+    def fake_synth(lines_, sections_, day, workdir, voice_dir, count, early_card=False, hook_frame="none"):
         calls["synth"] += 1
         if fail["durations"]:
             raise DurationError(fail["durations"].pop(0), *range_for(count))
