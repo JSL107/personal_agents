@@ -13,6 +13,7 @@ import {
   assignArm,
   DEFAULT_FORMAT_VALUES,
   FORMAT_KNOBS,
+  FormatKnob,
   FormatPolicy,
   policyProblem,
 } from './format-policy';
@@ -46,7 +47,8 @@ if payload.get('record'):
     out_dir = root / payload['record']['day']
     out_dir.mkdir()
     assignment = module.choose_assignment(out_dir, root, payload['record']['day'])
-    result['record'] = module.experiment_record(assignment, {'points': [{'kind': 'point', 'start': 1.2}]})
+    segments = [item['segment'] for item in payload['record']['segments']]
+    result['record'] = module.experiment_record(assignment, {'points': [{'kind': 'point', 'start': 1.2}]}, segments)
 json.dump(result, sys.stdout)
 `;
 
@@ -60,7 +62,7 @@ type PythonParityOutput = {
 const runPython = (
   policies: unknown[],
   assignments: Array<{ policy: FormatPolicy; day: string }>,
-  record?: { policy: FormatPolicy; day: string },
+  record?: { policy: FormatPolicy; day: string; segments: unknown[] },
 ): PythonParityOutput => {
   const scriptPath = resolve(process.cwd(), 'scripts/hermes-skill-reels.py');
   const result = spawnSync(
@@ -87,7 +89,7 @@ const basePolicy: FormatPolicy = {
   champion: { ...DEFAULT_FORMAT_VALUES },
   experiment: {
     id: 'early_card-2026-11-10',
-    knob: 'early_card',
+    knob: FormatKnob.EARLY_CARD,
     challenger: true,
     start: '2026-11-10',
   },
@@ -100,7 +102,7 @@ describe('Python 형식 정책 parity', () => {
       verdict: ReelFormatVerdict.KEEP,
       mode: ReelFormatDecisionMode.PROPOSAL,
       candidate: {
-        knob: 'early_card',
+        knob: FormatKnob.EARLY_CARD,
         challenger: true,
         id: 'early_card=true',
       },
@@ -111,7 +113,7 @@ describe('Python 형식 정책 parity', () => {
       verdict: ReelFormatVerdict.PROMOTE,
       mode: ReelFormatDecisionMode.AUTO,
       candidate: {
-        knob: 'early_card',
+        knob: FormatKnob.EARLY_CARD,
         challenger: false,
         id: 'early_card=false',
       },
@@ -136,11 +138,21 @@ describe('Python 형식 정책 parity', () => {
       { ...basePolicy, version: -1 },
       { ...basePolicy, version: true },
       { ...basePolicy, frozen: 0 },
-      { ...basePolicy, champion: { early_card: true }, experiment: null },
-      { ...basePolicy, champion: { early_card: 0 } },
-      { ...basePolicy, champion: { early_card: 'false' } },
+      {
+        ...basePolicy,
+        champion: { ...DEFAULT_FORMAT_VALUES, early_card: true },
+        experiment: null,
+      },
+      { ...basePolicy, champion: { ...DEFAULT_FORMAT_VALUES, early_card: 0 } },
+      {
+        ...basePolicy,
+        champion: { ...DEFAULT_FORMAT_VALUES, early_card: 'false' },
+      },
       { ...basePolicy, champion: {} },
-      { ...basePolicy, champion: { early_card: false, extra: true } },
+      {
+        ...basePolicy,
+        champion: { ...DEFAULT_FORMAT_VALUES, early_card: false, extra: true },
+      },
       { ...basePolicy, extra: 1 },
       { ...basePolicy, experiment: {} },
       { ...basePolicy, experiment: { ...basePolicy.experiment, id: '' } },
@@ -181,7 +193,12 @@ describe('Python 형식 정책 parity', () => {
       for (const id of ['alpha', 'beta', 'gamma']) {
         const policy: FormatPolicy = {
           ...basePolicy,
-          experiment: { id, knob: 'early_card', challenger: true, start },
+          experiment: {
+            id,
+            knob: FormatKnob.EARLY_CARD,
+            challenger: true,
+            start,
+          },
         };
         const startDate = new Date(`${start}T00:00:00.000Z`);
         for (let offset = -2; offset < 40; offset += 1) {
@@ -213,37 +230,34 @@ describe('Python 형식 정책 parity', () => {
         assignArm({ policy: basePolicy, day: candidate }).arm === 'challenger',
     );
     expect(day).toBeDefined();
+    // 기본값은 2꼭지·질문형 첫 줄이라 그 모양이어야 실현으로 친다
+    const segments = ['ai', 'dev'].map((field) => ({
+      field,
+      segment: {
+        headline: '형식 실험',
+        lines: [
+          {
+            subtitle: '첫 줄일까요?',
+            speech: '첫 줄일까요?',
+            gesture: 'idle',
+            react: 'none',
+            point_kind: 'point',
+          },
+        ],
+      },
+    }));
     const python = runPython([], [], {
       policy: basePolicy,
       day: day as string,
+      segments,
     });
-    const script = {
-      duration: 52,
-      segments: [
-        {
-          field: 'ai',
-          segment: {
-            headline: '형식 실험',
-            lines: [
-              {
-                subtitle: '첫 줄',
-                speech: '첫 줄',
-                gesture: 'idle',
-                react: 'none',
-                point_kind: 'point',
-              },
-            ],
-          },
-        },
-      ],
-      experiment: python.record,
-    };
+    const script = { duration: 52, segments, experiment: python.record };
     const features = extractReelFeatures({ script, folderField: 'daily' });
     expect(features?.experiment).toMatchObject({
       experimentId: basePolicy.experiment?.id,
       knob: 'early_card',
       arm: 'challenger',
-      values: { early_card: true },
+      values: { ...DEFAULT_FORMAT_VALUES, early_card: true },
       realized: true,
     });
     const post = {

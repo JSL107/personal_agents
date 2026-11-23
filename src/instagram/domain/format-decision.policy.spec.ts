@@ -15,17 +15,22 @@ import {
   SampleCollection,
   ScoredSample,
 } from './format-decision.policy';
-import { FormatPolicy } from './format-policy';
+import {
+  assignArm,
+  DEFAULT_FORMAT_VALUES,
+  FormatKnob,
+  FormatPolicy,
+} from './format-policy';
 import { InsightSnapshot, SnapshotWindow } from './instagram-insight.type';
 import { InstagramPost, InstagramPostStatus } from './instagram-post.type';
 
 const POLICY: FormatPolicy = {
   version: 1,
   frozen: false,
-  champion: { early_card: false },
+  champion: { ...DEFAULT_FORMAT_VALUES, early_card: false },
   experiment: {
     id: 'early_card-2026-11-01',
-    knob: 'early_card',
+    knob: FormatKnob.EARLY_CARD,
     challenger: true,
     start: '2026-11-01',
   },
@@ -80,7 +85,7 @@ const history = (
   patch: Partial<DecisionHistoryRow> = {},
 ): DecisionHistoryRow => ({
   experimentId: 'old',
-  knob: 'early_card',
+  knob: FormatKnob.EARLY_CARD,
   championValue: false,
   challengerValue: true,
   verdict: ReelFormatVerdict.KEEP,
@@ -182,6 +187,42 @@ describe('judgeExperiment', () => {
       judgeExperiment({ policy: POLICY, samples, today: '2026-11-20' }).reason,
     ).toBe('watch_guard');
   });
+  it('꼭지 수 실험은 영상이 짧아져 시청이 줄어도 시청 가드로 막지 않는다', () => {
+    const samples = collection();
+    samples.challenger.forEach((item) => {
+      item.avgWatchMs = 3000;
+    });
+    const policy: FormatPolicy = {
+      ...POLICY,
+      experiment: {
+        id: 'segments-2026-11-01',
+        knob: FormatKnob.SEGMENTS,
+        challenger: 1,
+        start: '2026-11-01',
+      },
+    };
+    expect(
+      judgeExperiment({ policy, samples, today: '2026-11-20' }).verdict,
+    ).toBe(ReelFormatVerdict.PROMOTE);
+  });
+  it('꼭지 수 실험은 평균 시청이 모두 비어 있어도 시청 누락으로 유지하지 않는다', () => {
+    const samples = collection();
+    samples.champion.forEach((item) => {
+      item.avgWatchMs = null;
+    });
+    const policy: FormatPolicy = {
+      ...POLICY,
+      experiment: {
+        id: 'segments-2026-11-01',
+        knob: FormatKnob.SEGMENTS,
+        challenger: 1,
+        start: '2026-11-01',
+      },
+    };
+    expect(
+      judgeExperiment({ policy, samples, today: '2026-11-20' }).verdict,
+    ).toBe(ReelFormatVerdict.PROMOTE);
+  });
   it('평균 시청이 모두 null이면 유지하고 사유를 남긴다', () => {
     const samples = collection();
     samples.champion.forEach((item) => {
@@ -243,7 +284,7 @@ describe('candidate and mode policies', () => {
       verdict: ReelFormatVerdict.PROMOTE,
       mode: ReelFormatDecisionMode.PROPOSAL,
       candidate: {
-        knob: 'early_card',
+        knob: FormatKnob.EARLY_CARD,
         challenger: true,
         id: 'early_card=true',
       },
@@ -259,7 +300,7 @@ describe('candidate and mode policies', () => {
     });
     const switched: FormatPolicy = {
       ...POLICY,
-      champion: { early_card: true },
+      champion: { ...DEFAULT_FORMAT_VALUES, early_card: true },
     };
     const candidates = listCandidates({ policy: switched, rows: [promoted] });
     expect(candidates.reverseChallenge).toBe(true);
@@ -277,7 +318,7 @@ describe('candidate and mode policies', () => {
             reverseChallenge: true,
           }),
         ],
-      }).candidates,
+      }).candidates.filter((candidate) => candidate.knob === 'early_card'),
     ).toEqual([]);
   });
   it('같은 쌍의 보류와 중단이 연속이면 후보를 제외한다', () => {
@@ -288,7 +329,11 @@ describe('candidate and mode policies', () => {
     expect(listCandidates({ policy: POLICY, rows }).needsHumanReview).toBe(
       true,
     );
-    expect(listCandidates({ policy: POLICY, rows }).candidates).toEqual([]);
+    expect(
+      listCandidates({ policy: POLICY, rows }).candidates.filter(
+        (candidate) => candidate.knob === 'early_card',
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -331,6 +376,50 @@ describe('collectSamples', () => {
     });
     expect(result.champion.length + result.challenger.length).toBe(0);
     expect(result.excluded.watch_null).toBe(1);
+  });
+  it('꼭지 수 실험은 평균 시청이 비어 있어도 넘김률 표본으로 센다', () => {
+    const policy: FormatPolicy = {
+      ...POLICY,
+      experiment: {
+        id: 'segments-2026-11-01',
+        knob: FormatKnob.SEGMENTS,
+        challenger: 1,
+        start: '2026-11-01',
+      },
+    };
+    const assignment = assignArm({ policy, day: '2026-11-01' });
+    const result = collectSamples({
+      policy,
+      posts: [
+        post('2026-11-01', {
+          features: {
+            experiment: {
+              policyVersion: 1,
+              source: 'policy',
+              experimentId: 'segments-2026-11-01',
+              knob: 'segments',
+              arm: assignment.arm,
+              values: assignment.values,
+              realized: true,
+              checks: {},
+            },
+          } as unknown as InstagramPost['features'],
+        }),
+      ],
+      snapshots: [
+        snapshot('2026-11-01', {
+          metrics: {
+            views: 100,
+            skipRate: 70,
+            avgWatchMs: null,
+          } as InsightSnapshot['metrics'],
+        }),
+      ],
+      today: '2026-11-10',
+      now: new Date('2026-11-20'),
+    });
+    expect(result.champion.length + result.challenger.length).toBe(1);
+    expect(result.excluded.watch_null).toBe(0);
   });
   it('arm과 실현값 불일치를 각각 제외한다', () => {
     const posts = [
@@ -480,7 +569,10 @@ describe('worst guard', () => {
       verdict: ReelFormatVerdict.PROMOTE,
       mode: ReelFormatDecisionMode.AUTO,
     });
-    const policy: FormatPolicy = { ...POLICY, champion: { early_card: true } };
+    const policy: FormatPolicy = {
+      ...POLICY,
+      champion: { ...DEFAULT_FORMAT_VALUES, early_card: true },
+    };
     const reverse = history({
       experimentId: 'reverse',
       championValue: true,
