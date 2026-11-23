@@ -344,7 +344,12 @@ describe('DecideReelsFormatUsecase', () => {
     );
     expect(planner.propose).toHaveBeenCalledWith(
       expect.objectContaining({
-        candidateIds: ['segments=1', 'hook_style="result"', 'early_card=true'],
+        candidateIds: [
+          'segments=1',
+          'hook_frame="big_text"',
+          'hook_style="result"',
+          'early_card=true',
+        ],
         reverseChallenge: false,
       }),
     );

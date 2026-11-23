@@ -40,7 +40,7 @@ describe('FormatPolicyFileStore', () => {
   it.each([
     '{',
     '{"version":1,',
-    '{"version":1.0,"frozen":false,"champion":{"segments":2,"hook_style":"question","early_card":false},"experiment":null}',
+    '{"version":1.0,"frozen":false,"champion":{"segments":2,"hook_frame":"none","hook_style":"question","early_card":false},"experiment":null}',
     '{}',
   ])('잘못된 정책을 거부한다: %s', async (raw) => {
     await writeFile(join(root, 'format-policy.json'), raw);
