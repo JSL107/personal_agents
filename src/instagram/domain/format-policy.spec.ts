@@ -1,5 +1,6 @@
 import {
   assignArm,
+  DEFAULT_FORMAT_VALUES,
   FormatPolicy,
   parseIsoDate,
   policyProblem,
@@ -9,7 +10,7 @@ import {
 const policy: FormatPolicy = {
   version: 1,
   frozen: false,
-  champion: { early_card: false },
+  champion: { ...DEFAULT_FORMAT_VALUES, early_card: false },
   experiment: {
     id: 'early_card-2026-11-10',
     knob: 'early_card',
@@ -30,9 +31,12 @@ describe('format-policy', () => {
   it('정책 키와 타입 및 실험 모양 오류를 구분한다', () => {
     expect(policyProblem({ ...policy, extra: true })).toBe('keys');
     expect(policyProblem({ ...policy, version: true })).toBe('types');
-    expect(policyProblem({ ...policy, champion: { early_card: 0 } })).toBe(
-      'champion',
-    );
+    expect(
+      policyProblem({
+        ...policy,
+        champion: { ...DEFAULT_FORMAT_VALUES, early_card: 0 },
+      }),
+    ).toBe('champion');
     expect(
       policyProblem({
         ...policy,
@@ -44,7 +48,7 @@ describe('format-policy', () => {
   it('시작 전과 frozen 정책에서는 champion이고 실험 중 두 날짜는 양 군으로 갈린다', () => {
     expect(assignArm({ policy: policy, day: '2026-11-09' })).toEqual({
       arm: 'champion',
-      values: { early_card: false },
+      values: { ...DEFAULT_FORMAT_VALUES, early_card: false },
       inExperiment: false,
     });
     const arms = [
