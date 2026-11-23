@@ -26,13 +26,13 @@ describe('parseStudyResearch', () => {
     expect(result).toMatchObject({ sourceUrls: [] });
   });
 
-  it('KEYWORDS 를 정규화해 읽는다', () => {
+  it('KEYWORDS 를 정규화해 읽고 대소문자만 다른 중복은 처음 표기를 남긴다', () => {
     const result = parseStudyResearch(
       'KIND: CONCEPT\nTOPIC: Hooks\nSOURCES: https://a.example\nKEYWORDS: Hook, settings, hook, 훅, spawn-args, a b, x1, x2, x3, x4, x5\n---\n본문',
     );
     expect(result).toMatchObject({
       keywords: [
-        'hook',
+        'Hook',
         'settings',
         'spawn-args',
         'x1',
@@ -40,6 +40,19 @@ describe('parseStudyResearch', () => {
         'x3',
         'x4',
         'x5',
+      ],
+    });
+  });
+
+  it('식별자 키워드의 대소문자를 보존한다', () => {
+    const result = parseStudyResearch(
+      'KIND: CONCEPT\nTOPIC: t\nKEYWORDS: priorTurns, IntentClassifierUsecase, INTENT_CLASSIFIER_EVAL_CASES\n---\n본문',
+    );
+    expect(result).toMatchObject({
+      keywords: [
+        'priorTurns',
+        'IntentClassifierUsecase',
+        'INTENT_CLASSIFIER_EVAL_CASES',
       ],
     });
   });
