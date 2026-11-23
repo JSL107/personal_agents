@@ -51,7 +51,37 @@ const decision: ReelFormatDecision = {
     proposalDecisionNumber: 1,
     nextReverseChallenge: false,
     needsHumanReview: false,
-    samples: [],
+    samples: [
+      {
+        day: '2026-11-10',
+        reelKey: '2026-11-10/daily',
+        snapshotId: 's1',
+        ageMinutes: 4400,
+        arm: 'champion',
+        skipRate: 70,
+        avgWatchMs: 2100,
+        reach: 120,
+      },
+      {
+        day: '2026-11-11',
+        reelKey: '2026-11-11/daily',
+        snapshotId: 's2',
+        ageMinutes: 4400,
+        arm: 'challenger',
+        skipRate: 62,
+        avgWatchMs: 2300,
+        reach: 180,
+      },
+      {
+        day: '2026-11-12',
+        reelKey: '2026-11-12/daily',
+        snapshotId: 's3',
+        ageMinutes: 4400,
+        arm: 'challenger',
+        skipRate: 62,
+        avgWatchMs: 2300,
+      },
+    ],
   },
   verdict: ReelFormatVerdict.PROMOTE,
   mode: ReelFormatDecisionMode.PROPOSAL,
@@ -87,6 +117,10 @@ describe('formatReelFormatDecisionReport', () => {
     expect(report).toContain('early_card-2026-11-10');
     expect(report).toContain('제안 모드 1/2');
     expect(report).toContain('champion 6편 / challenger 6편');
+    // 도달이 없는 옛 표본(s3)은 평균·편수에서 빠진다
+    expect(report).toContain(
+      '도달(참고, 3일): champion 평균 120명 · 150명 넘김 0/1편 / challenger 평균 180명 · 150명 넘김 1/1편',
+    );
     expect(report).toContain('low_views 2');
     expect(report).toContain('v1→v2');
     expect(report).toContain('early_card-2026-11-26');

@@ -4,8 +4,11 @@ import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
 import {
   DecisionStatsRecord,
   ExclusionReason,
+  REACH_BREAKOUT,
   ReelFormatDecisionMode,
   ReelFormatDecisionReason,
+  ScoredSample,
+  summarizeReach,
 } from '../domain/format-decision.policy';
 import { FormatKnobValue } from '../domain/format-policy';
 import {
@@ -118,7 +121,14 @@ const formatStatsLines = ({
     `평균 스킵률: champion ${formatNumber(stats.championMeanSkip)}% / challenger ${formatNumber(stats.challengerMeanSkip)}% · 차이 ${formatNumber(stats.skipDifference)}%p · p ${formatNumber(stats.pValue, 4)}`,
     `평균 시청: champion ${formatWatchSeconds(stats.championMeanWatchMs)}초 / challenger ${formatWatchSeconds(stats.challengerMeanWatchMs)}초`,
     `게시율: champion ${formatNumber(stats.publishRates.championRate)}% / challenger ${formatNumber(stats.publishRates.challengerRate)}%`,
+    formatReachLine(stats.samples),
   ];
+};
+
+const formatReachLine = (samples: ScoredSample[]): string => {
+  const champion = summarizeReach({ samples, arm: 'champion' });
+  const challenger = summarizeReach({ samples, arm: 'challenger' });
+  return `도달(참고, 3일): champion 평균 ${formatNumber(champion.meanReach, 0)}명 · ${REACH_BREAKOUT}명 넘김 ${champion.breakouts}/${champion.n}편 / challenger 평균 ${formatNumber(challenger.meanReach, 0)}명 · ${REACH_BREAKOUT}명 넘김 ${challenger.breakouts}/${challenger.n}편`;
 };
 
 const formatReason = (reason: ReelFormatDecisionReason): string => {

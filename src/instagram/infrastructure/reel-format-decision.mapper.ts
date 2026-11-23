@@ -24,6 +24,7 @@ const SAMPLE_PATTERN = {
   arm: P.union('champion', 'challenger'),
   skipRate: P.number,
   avgWatchMs: P.union(P.number, null),
+  reach: P.optional(P.union(P.number, null)),
 };
 const EXCLUDED_PATTERN = {
   [ExclusionReason.LOST]: P.number,
