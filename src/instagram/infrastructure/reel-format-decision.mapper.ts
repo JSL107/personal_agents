@@ -8,6 +8,7 @@ import {
   ReelFormatVerdict,
 } from '../domain/format-decision.policy';
 import {
+  fillMissingKnobs,
   FORMAT_KNOBS,
   FormatKnobValue,
   isFormatKnob,
@@ -106,8 +107,13 @@ const ROW_PATTERN = {
 };
 
 export const toReelFormatDecision = (
-  row: ReelFormatDecisionRow,
+  stored: ReelFormatDecisionRow,
 ): ReelFormatDecision => {
+  // 손잡이를 더하기 전 판정의 policyAfter 도 복구에 쓰이므로 정책 파일과 같은 규칙으로 채워 읽는다.
+  const row = {
+    ...stored,
+    policyAfter: fillMissingKnobs(stored.policyAfter),
+  };
   if (!isMatching(ROW_PATTERN, row)) {
     throw new ReelFormatLedgerCorruptedException([row.id]);
   }
