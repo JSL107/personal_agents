@@ -237,12 +237,18 @@ describe('CodeGraphQueryUsecase', () => {
           chunk('agentRunB'),
           chunk('agentRunC'),
           chunk('AgentRun', 'class'),
-          ...filler(96),
+          chunk('handleEvent', 'function', 'this.agentRun.start()'),
+          ...filler(95),
         ]),
         keywords: ['agentRun'],
         limit: 12,
       });
-      expect(result.map((candidate) => candidate.name)).toEqual(['AgentRun']);
+      expect(
+        result.map((candidate) => [candidate.name, candidate.score]),
+      ).toEqual([
+        ['AgentRun', 10],
+        ['handleEvent', 1],
+      ]);
     });
 
     it('키워드가 비면 빈 배열', () => {
