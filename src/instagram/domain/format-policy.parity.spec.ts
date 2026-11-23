@@ -12,6 +12,7 @@ import {
 import {
   assignArm,
   DEFAULT_FORMAT_VALUES,
+  fillMissingKnobs,
   FORMAT_KNOBS,
   FormatKnob,
   FormatPolicy,
@@ -38,6 +39,7 @@ payload = json.load(sys.stdin)
 result = {
   'knobs': {key: list(values) for key, values in module.KNOBS.items()},
   'problems': [module.policy_problem(policy) for policy in payload['policies']],
+  'filled': [module.policy_problem(module.fill_missing_knobs(policy)) for policy in payload['policies']],
   'arms': [module.assign_arm(entry['policy'], entry['day'])[0] for entry in payload['assignments']],
 }
 if payload.get('record'):
@@ -55,6 +57,7 @@ json.dump(result, sys.stdout)
 type PythonParityOutput = {
   knobs: Record<string, Array<boolean | string | number>>;
   problems: string[];
+  filled: string[];
   arms: string[];
   record?: Record<string, unknown>;
 };
@@ -178,6 +181,12 @@ describe('Python 형식 정책 parity', () => {
       },
       { ...basePolicy, experiment: { ...basePolicy.experiment, start: null } },
       { ...basePolicy, experiment: { ...basePolicy.experiment, extra: true } },
+      { ...basePolicy, champion: { early_card: false } },
+      { ...basePolicy, champion: { early_card: false, unknown: true } },
+      { ...basePolicy, champion: { early_card: 'false' } },
+      { ...basePolicy, champion: [] },
+      { ...basePolicy, champion: {} },
+      { ...basePolicy, champion: { segments: 2 } },
       null,
       [],
       'broken',
@@ -185,6 +194,10 @@ describe('Python 형식 정책 parity', () => {
     const python = runPython(policies, []);
     expect(python.knobs).toEqual(FORMAT_KNOBS);
     expect(policies.map(policyProblem)).toEqual(python.problems);
+    // 빠진 손잡이 채우기도 두 언어가 같은 정책을 받아들이고 같은 이유로 거부한다
+    expect(
+      policies.map((policy) => policyProblem(fillMissingKnobs(policy))),
+    ).toEqual(python.filled);
   });
 
   it('연 경계와 윤년을 포함한 40일씩 세 실험 id에서 매일 같은 군으로 배정한다', () => {

@@ -129,6 +129,7 @@ POLICY_NAME = "format-policy.json"
 KNOBS = {"segments": (2, 1), "hook_frame": ("none", "big_text"), "hook_style": ("question", "result"),
          "early_card": (False, True)}
 DEFAULT_VALUES = {"segments": 2, "hook_frame": "none", "hook_style": "question", "early_card": False}
+BASE_KNOB = "early_card"  # 첫 정책부터 모든 정책 파일에 있던 손잡이. 없으면 옛 모양이 아니라 손상으로 본다
 HOOK_FRAME_SEC = 1.5  # big_text 면 이 시각까지 제목 카드·자막 없이 첫 줄만 크게 보인다(2026-11-23 시안 A 채택)
 HOOK_RULES = {
     "question": "시청자가 겪는 상황을 묻는 질문 한 문장으로 시작하고 물음표로 끝낸다(숫자·고유명사로 시작하지 않는다). "
@@ -680,10 +681,23 @@ def load_policy(out_root: Path) -> tuple[dict, str]:
         return default, "default:missing"
     except (OSError, ValueError):
         return default, "default:broken"
+    policy = fill_missing_knobs(policy)
     reason = policy_problem(policy)
     if reason:
         return default, f"default:{reason}"
     return policy, "file"
+
+
+def fill_missing_knobs(policy: object) -> object:
+    """손잡이를 더하기 전에 저장된 정책은 champion 에 새 손잡이가 없다. 아는 손잡이만 있고 BASE_KNOB 이 있으면 빠진 것을 기본값으로
+    채운다. 모르는 키가 섞였거나 BASE_KNOB 이 없거나 모양이 다르면 그대로 돌려줘 policy_problem 이 거부하게 한다(손상을 기본값으로
+    덮지 않는다). 이대리 fillMissingKnobs 와 같다."""
+    if not isinstance(policy, dict) or not isinstance(policy.get("champion"), dict):
+        return policy
+    keys = set(policy["champion"])
+    if BASE_KNOB not in keys or not keys <= set(KNOBS):
+        return policy
+    return {**policy, "champion": {**DEFAULT_VALUES, **policy["champion"]}}
 
 
 def policy_problem(policy: object) -> str:
@@ -1522,7 +1536,9 @@ def self_check() -> None:
         good = {"version": 3, "frozen": False, "champion": dict(DEFAULT_VALUES),
                 "experiment": {"id": "exp-1", "knob": "early_card", "challenger": True, "start": "2026-11-10"}}
         for bad in ({**good, "extra": 1}, {**good, "champion": {**DEFAULT_VALUES, "early_card": 1}},
-                    {**good, "champion": {"early_card": False}},  # 손잡이가 늘기 전 모양
+                    {**good, "champion": {"early_card": False, "unknown": 1}},  # 모르는 손잡이는 채우지 않고 거부
+                    {**good, "champion": {"early_card": 2}},  # 채운 뒤에도 값이 틀리면 거부
+                    {**good, "champion": {}}, {**good, "champion": {"segments": 2}},  # 처음부터 있던 손잡이가 없으면 손상
                     {**good, "champion": {**DEFAULT_VALUES, "segments": True}},  # bool 은 int 가 아니다
                     {**good, "champion": {**DEFAULT_VALUES, "hook_style": "story"}},
                     {**good, "experiment": {**good["experiment"], "challenger": False}},
@@ -1532,6 +1548,9 @@ def self_check() -> None:
         (root / POLICY_NAME).write_text(json.dumps(good), encoding="utf-8")
         policy, source = load_policy(root)
         assert source == "file" and policy == good
+        # 손잡이가 늘기 전 모양은 빠진 손잡이를 기본값으로 채워 그대로 쓴다(진행 중인 실험 유지)
+        (root / POLICY_NAME).write_text(json.dumps({**good, "champion": {"early_card": False}}), encoding="utf-8")
+        assert load_policy(root) == (good, "file")
     assert assign_arm(good, "2026-11-09") == ("champion", DEFAULT_VALUES, False)  # 시작 전은 실험 밖
     arms = [assign_arm(good, f"2026-11-{d}")[0] for d in range(10, 30)]
     assert all(sorted(arms[i:i + 2]) == ["challenger", "champion"] for i in range(0, 20, 2))  # 묶음마다 한 번씩

@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { isMatching, P } from 'ts-pattern';
+
 // 값은 format-policy.json 키이자 Python KNOBS 키다(parity spec 이 같은지 본다).
 export enum FormatKnob {
   SEGMENTS = 'segments',
@@ -93,6 +95,26 @@ export const policyProblem = (value: unknown): string => {
 
 export const isFormatPolicy = (value: unknown): value is FormatPolicy =>
   policyProblem(value) === '';
+
+// 실제로 저장된 적 있는 옛 정책 모양: champion 에 아는 손잡이만 있고, 첫 정책부터 늘 있던 early_card 는 있다.
+// 빈 champion·early_card 없는 champion·모르는 키·배열은 옛 모양이 아니라 손상이라 맞지 않는다.
+const OLD_POLICY_SHAPE = {
+  champion: P.intersection(P.record(P.when(isFormatKnob), P._), {
+    [FormatKnob.EARLY_CARD]: P._,
+  }),
+};
+
+// 손잡이를 더하기 전에 저장된 정책은 champion 에 새 손잡이가 없다. 옛 모양이면 빠진 손잡이를 기본값으로 채운다.
+// 아니면 그대로 돌려줘 policyProblem 이 거부하게 한다(손상을 기본값으로 덮지 않는다). Python fill_missing_knobs 와 같다.
+export const fillMissingKnobs = (value: unknown): unknown => {
+  if (!isMatching(OLD_POLICY_SHAPE, value)) {
+    return value;
+  }
+  return {
+    ...value,
+    champion: { ...DEFAULT_FORMAT_VALUES, ...value.champion },
+  };
+};
 
 const championProblem = (champion: unknown): string => {
   if (!hasKeys(champion, FORMAT_KNOB_NAMES)) {
