@@ -13,7 +13,7 @@ export interface StudyResearchResult {
 }
 
 const MAX_KEYWORDS = 8;
-const KEYWORD_PATTERN = /^[a-z0-9_-]+$/;
+const KEYWORD_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export interface StudyResearchSkipped {
   skippedReason: string;
@@ -87,13 +87,20 @@ const parseKeywords = (keywordLine: string | undefined): string[] => {
   if (!keywordLine) {
     return [];
   }
-  const normalized = keywordLine
+  // 대소문자는 보존한다 — 검색이 camelCase 경계로 키워드를 낱말로 나눠 이름의 연속 낱말과 맞춘다.
+  const keywords = keywordLine
     .trim()
     .slice('KEYWORDS:'.length)
     .split(',')
-    .map((keyword) => keyword.trim().toLowerCase())
+    .map((keyword) => keyword.trim())
     .filter((keyword) => KEYWORD_PATTERN.test(keyword));
-  return [...new Set(normalized)].slice(0, MAX_KEYWORDS);
+  const unique = keywords.filter(
+    (keyword, index) =>
+      keywords.findIndex(
+        (other) => other.toLowerCase() === keyword.toLowerCase(),
+      ) === index,
+  );
+  return unique.slice(0, MAX_KEYWORDS);
 };
 
 const parseSourceUrls = (sourceLine: string | undefined): string[] => {

@@ -191,6 +191,66 @@ describe('CodeGraphQueryUsecase', () => {
       expect(result.map((candidate) => candidate.name)).toEqual(['runAll']);
     });
 
+    it('대소문자가 남은 키워드의 낱말이 이름에 연속으로 있으면 이름 일치로 친다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([
+          chunk('getPriorTurnsWithChannelFallback'),
+          chunk('priorWork'),
+          chunk('turnsLeft'),
+          ...filler(100),
+        ]),
+        keywords: ['priorTurns'],
+        limit: 12,
+      });
+      expect(
+        result.map((candidate) => [candidate.name, candidate.score]),
+      ).toEqual([['getPriorTurnsWithChannelFallback', 10]]);
+    });
+
+    it('밑줄로 이은 소문자 키워드도 연속 낱말로 비교한다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([
+          chunk('getPriorTurnsWithChannelFallback'),
+          ...filler(100),
+        ]),
+        keywords: ['prior_turns'],
+        limit: 12,
+      });
+      expect(result.map((candidate) => candidate.name)).toEqual([
+        'getPriorTurnsWithChannelFallback',
+      ]);
+    });
+
+    it('전체 이름 일치와 연속 일치를 한 키워드에 겹쳐 주지 않는다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([chunk('FoobarFooBar'), ...filler(100)]),
+        keywords: ['fooBar'],
+        limit: 12,
+      });
+      expect(result.map((candidate) => candidate.score)).toEqual([10]);
+    });
+
+    it('연속 일치가 2% 이상 조각에 걸리면 그 키워드의 연속 일치만 끈다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([
+          chunk('agentRunA'),
+          chunk('agentRunB'),
+          chunk('agentRunC'),
+          chunk('AgentRun', 'class'),
+          chunk('handleEvent', 'function', 'this.agentRun.start()'),
+          ...filler(95),
+        ]),
+        keywords: ['agentRun'],
+        limit: 12,
+      });
+      expect(
+        result.map((candidate) => [candidate.name, candidate.score]),
+      ).toEqual([
+        ['AgentRun', 10],
+        ['handleEvent', 1],
+      ]);
+    });
+
     it('키워드가 비면 빈 배열', () => {
       expect(
         usecase.findChunksByKeywords({
