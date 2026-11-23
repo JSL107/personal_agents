@@ -7,6 +7,7 @@ import {
 import {
   assignArm,
   DEFAULT_FORMAT_VALUES,
+  FormatKnob,
   FormatPolicy,
 } from '../domain/format-policy';
 import { ReelFormatLedgerCorruptedException } from '../domain/instagram.exception';
@@ -35,7 +36,7 @@ const policy: FormatPolicy = {
   champion: { ...DEFAULT_FORMAT_VALUES, early_card: false },
   experiment: {
     id: 'early_card-2026-10-01',
-    knob: 'early_card',
+    knob: FormatKnob.EARLY_CARD,
     challenger: true,
     start: '2026-10-01',
   },
@@ -46,7 +47,7 @@ const decisionRow = (
 ): ReelFormatDecision => ({
   id: 'row-1',
   experimentId: policy.experiment!.id,
-  knob: 'early_card',
+  knob: FormatKnob.EARLY_CARD,
   championValue: false,
   challengerValue: true,
   nChampion: 0,

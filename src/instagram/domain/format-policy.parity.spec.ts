@@ -13,6 +13,7 @@ import {
   assignArm,
   DEFAULT_FORMAT_VALUES,
   FORMAT_KNOBS,
+  FormatKnob,
   FormatPolicy,
   policyProblem,
 } from './format-policy';
@@ -88,7 +89,7 @@ const basePolicy: FormatPolicy = {
   champion: { ...DEFAULT_FORMAT_VALUES },
   experiment: {
     id: 'early_card-2026-11-10',
-    knob: 'early_card',
+    knob: FormatKnob.EARLY_CARD,
     challenger: true,
     start: '2026-11-10',
   },
@@ -101,7 +102,7 @@ describe('Python 형식 정책 parity', () => {
       verdict: ReelFormatVerdict.KEEP,
       mode: ReelFormatDecisionMode.PROPOSAL,
       candidate: {
-        knob: 'early_card',
+        knob: FormatKnob.EARLY_CARD,
         challenger: true,
         id: 'early_card=true',
       },
@@ -112,7 +113,7 @@ describe('Python 형식 정책 parity', () => {
       verdict: ReelFormatVerdict.PROMOTE,
       mode: ReelFormatDecisionMode.AUTO,
       candidate: {
-        knob: 'early_card',
+        knob: FormatKnob.EARLY_CARD,
         challenger: false,
         id: 'early_card=false',
       },
@@ -192,7 +193,12 @@ describe('Python 형식 정책 parity', () => {
       for (const id of ['alpha', 'beta', 'gamma']) {
         const policy: FormatPolicy = {
           ...basePolicy,
-          experiment: { id, knob: 'early_card', challenger: true, start },
+          experiment: {
+            id,
+            knob: FormatKnob.EARLY_CARD,
+            challenger: true,
+            start,
+          },
         };
         const startDate = new Date(`${start}T00:00:00.000Z`);
         for (let offset = -2; offset < 40; offset += 1) {

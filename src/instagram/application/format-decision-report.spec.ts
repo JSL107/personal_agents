@@ -4,14 +4,14 @@ import {
   ReelFormatDecisionReason,
   ReelFormatVerdict,
 } from '../domain/format-decision.policy';
-import { DEFAULT_FORMAT_VALUES } from '../domain/format-policy';
+import { DEFAULT_FORMAT_VALUES, FormatKnob } from '../domain/format-policy';
 import { ReelFormatDecision } from '../domain/port/reel-format-decision.repository.port';
 import { formatReelFormatDecisionReport } from './format-decision-report';
 
 const decision: ReelFormatDecision = {
   id: 'row-1',
   experimentId: 'early_card-2026-11-10',
-  knob: 'early_card',
+  knob: FormatKnob.EARLY_CARD,
   championValue: false,
   challengerValue: true,
   nChampion: 6,
@@ -65,7 +65,7 @@ const decision: ReelFormatDecision = {
     champion: { ...DEFAULT_FORMAT_VALUES, early_card: false },
     experiment: {
       id: 'early_card-2026-11-26',
-      knob: 'early_card',
+      knob: FormatKnob.EARLY_CARD,
       challenger: true,
       start: '2026-11-26',
     },

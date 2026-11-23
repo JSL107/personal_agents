@@ -18,6 +18,7 @@ import {
 import {
   assignArm,
   DEFAULT_FORMAT_VALUES,
+  FormatKnob,
   FormatPolicy,
 } from './format-policy';
 import { InsightSnapshot, SnapshotWindow } from './instagram-insight.type';
@@ -29,7 +30,7 @@ const POLICY: FormatPolicy = {
   champion: { ...DEFAULT_FORMAT_VALUES, early_card: false },
   experiment: {
     id: 'early_card-2026-11-01',
-    knob: 'early_card',
+    knob: FormatKnob.EARLY_CARD,
     challenger: true,
     start: '2026-11-01',
   },
@@ -84,7 +85,7 @@ const history = (
   patch: Partial<DecisionHistoryRow> = {},
 ): DecisionHistoryRow => ({
   experimentId: 'old',
-  knob: 'early_card',
+  knob: FormatKnob.EARLY_CARD,
   championValue: false,
   challengerValue: true,
   verdict: ReelFormatVerdict.KEEP,
@@ -195,7 +196,7 @@ describe('judgeExperiment', () => {
       ...POLICY,
       experiment: {
         id: 'segments-2026-11-01',
-        knob: 'segments',
+        knob: FormatKnob.SEGMENTS,
         challenger: 1,
         start: '2026-11-01',
       },
@@ -213,7 +214,7 @@ describe('judgeExperiment', () => {
       ...POLICY,
       experiment: {
         id: 'segments-2026-11-01',
-        knob: 'segments',
+        knob: FormatKnob.SEGMENTS,
         challenger: 1,
         start: '2026-11-01',
       },
@@ -283,7 +284,7 @@ describe('candidate and mode policies', () => {
       verdict: ReelFormatVerdict.PROMOTE,
       mode: ReelFormatDecisionMode.PROPOSAL,
       candidate: {
-        knob: 'early_card',
+        knob: FormatKnob.EARLY_CARD,
         challenger: true,
         id: 'early_card=true',
       },
@@ -381,7 +382,7 @@ describe('collectSamples', () => {
       ...POLICY,
       experiment: {
         id: 'segments-2026-11-01',
-        knob: 'segments',
+        knob: FormatKnob.SEGMENTS,
         challenger: 1,
         start: '2026-11-01',
       },

@@ -1,19 +1,27 @@
 import { createHash } from 'node:crypto';
 
-export const FORMAT_KNOBS = {
-  segments: [2, 1],
-  hook_frame: ['none', 'big_text'],
-  hook_style: ['question', 'result'],
-  early_card: [false, true],
-};
-export type FormatKnob = keyof typeof FORMAT_KNOBS;
+// 값은 format-policy.json 키이자 Python KNOBS 키다(parity spec 이 같은지 본다).
+export enum FormatKnob {
+  SEGMENTS = 'segments',
+  HOOK_FRAME = 'hook_frame',
+  HOOK_STYLE = 'hook_style',
+  EARLY_CARD = 'early_card',
+}
 export type FormatKnobValue = boolean | string | number;
 export type FormatValues = Record<FormatKnob, FormatKnobValue>;
+export const FORMAT_KNOBS: Readonly<
+  Record<FormatKnob, readonly FormatKnobValue[]>
+> = {
+  [FormatKnob.SEGMENTS]: [2, 1],
+  [FormatKnob.HOOK_FRAME]: ['none', 'big_text'],
+  [FormatKnob.HOOK_STYLE]: ['question', 'result'],
+  [FormatKnob.EARLY_CARD]: [false, true],
+};
 export const DEFAULT_FORMAT_VALUES: Readonly<FormatValues> = {
-  segments: 2,
-  hook_frame: 'none',
-  hook_style: 'question',
-  early_card: false,
+  [FormatKnob.SEGMENTS]: 2,
+  [FormatKnob.HOOK_FRAME]: 'none',
+  [FormatKnob.HOOK_STYLE]: 'question',
+  [FormatKnob.EARLY_CARD]: false,
 };
 const ISO_DATE_LENGTH = 10;
 const DAY_MS = 86_400_000;
@@ -22,10 +30,10 @@ const PARITY_MODULUS = 2;
 
 // 다음 실험 후보를 이 순서로 고른다. 첫 3초를 크게 바꾸는 축부터(2026-11-23 지표 분석: 도달이 첫 노출 풀에서 멈춘다).
 export const FORMAT_KNOB_NAMES: readonly FormatKnob[] = [
-  'segments',
-  'hook_frame',
-  'hook_style',
-  'early_card',
+  FormatKnob.SEGMENTS,
+  FormatKnob.HOOK_FRAME,
+  FormatKnob.HOOK_STYLE,
+  FormatKnob.EARLY_CARD,
 ];
 export const isFormatKnob = (value: string): value is FormatKnob =>
   FORMAT_KNOB_NAMES.some((knob) => knob === value);
