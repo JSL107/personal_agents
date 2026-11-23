@@ -4,7 +4,12 @@ import {
   ReelFormatDecisionReason,
   ReelFormatVerdict,
 } from '../domain/format-decision.policy';
-import { assignArm, FormatPolicy } from '../domain/format-policy';
+import {
+  assignArm,
+  DEFAULT_FORMAT_VALUES,
+  FormatKnob,
+  FormatPolicy,
+} from '../domain/format-policy';
 import { ReelFormatLedgerCorruptedException } from '../domain/instagram.exception';
 import {
   EMPTY_INSIGHT_METRICS,
@@ -28,10 +33,10 @@ import { DecideReelsFormatUsecase } from './decide-reels-format.usecase';
 const policy: FormatPolicy = {
   version: 1,
   frozen: false,
-  champion: { early_card: false },
+  champion: { ...DEFAULT_FORMAT_VALUES, early_card: false },
   experiment: {
     id: 'early_card-2026-10-01',
-    knob: 'early_card',
+    knob: FormatKnob.EARLY_CARD,
     challenger: true,
     start: '2026-10-01',
   },
@@ -42,7 +47,7 @@ const decisionRow = (
 ): ReelFormatDecision => ({
   id: 'row-1',
   experimentId: policy.experiment!.id,
-  knob: 'early_card',
+  knob: FormatKnob.EARLY_CARD,
   championValue: false,
   challengerValue: true,
   nChampion: 0,
@@ -340,7 +345,12 @@ describe('DecideReelsFormatUsecase', () => {
     );
     expect(planner.propose).toHaveBeenCalledWith(
       expect.objectContaining({
-        candidateIds: ['early_card=true'],
+        candidateIds: [
+          'segments=1',
+          'hook_frame="big_text"',
+          'hook_style="result"',
+          'early_card=true',
+        ],
         reverseChallenge: false,
       }),
     );
@@ -385,7 +395,7 @@ describe('DecideReelsFormatUsecase', () => {
     expect(report?.reportedIds).toContain('saved-after-write-failure');
   });
 
-  it('제안 모드의 PROMOTE는 챔피언을 바꾸지 않고 같은 대결을 다시 연다', async () => {
+  it('제안 모드의 PROMOTE는 챔피언을 바꾸지 않고 대기열 첫 대결을 연다', async () => {
     const { usecase, store, decisions, posts, snapshots } = setup();
     const scored = scoredPosts();
     posts.listPublishedSince.mockResolvedValue(scored.posts);
@@ -399,8 +409,11 @@ describe('DecideReelsFormatUsecase', () => {
         verdict: 'PROMOTE',
         mode: 'PROPOSAL',
         policyAfter: expect.objectContaining({
-          champion: { early_card: false },
-          experiment: expect.objectContaining({ challenger: true }),
+          champion: { ...DEFAULT_FORMAT_VALUES, early_card: false },
+          experiment: expect.objectContaining({
+            knob: 'segments',
+            challenger: 1,
+          }),
         }),
       }),
     );
@@ -455,7 +468,7 @@ describe('DecideReelsFormatUsecase', () => {
       policy: {
         ...policy,
         version: 3,
-        champion: { early_card: true },
+        champion: { ...DEFAULT_FORMAT_VALUES, early_card: true },
         experiment: null,
       },
     });
@@ -493,7 +506,7 @@ describe('DecideReelsFormatUsecase', () => {
         verdict: ReelFormatVerdict.PROMOTE,
         mode: ReelFormatDecisionMode.AUTO,
         policyAfter: expect.objectContaining({
-          champion: { early_card: true },
+          champion: { ...DEFAULT_FORMAT_VALUES, early_card: true },
           experiment: expect.objectContaining({ challenger: false }),
         }),
         statsJson: expect.objectContaining({ nextReverseChallenge: true }),
@@ -520,7 +533,10 @@ describe('DecideReelsFormatUsecase', () => {
           error: expect.stringContaining('후보 밖 제안'),
         }),
         policyAfter: expect.objectContaining({
-          experiment: expect.objectContaining({ challenger: true }),
+          experiment: expect.objectContaining({
+            knob: 'segments',
+            challenger: 1,
+          }),
         }),
       }),
     );
@@ -543,7 +559,7 @@ describe('DecideReelsFormatUsecase', () => {
         policyAfter: {
           ...policy,
           version: 2,
-          champion: { early_card: true },
+          champion: { ...DEFAULT_FORMAT_VALUES, early_card: true },
         },
         statsJson: {
           ...decisionRow().statsJson,
@@ -560,7 +576,7 @@ describe('DecideReelsFormatUsecase', () => {
         policy: {
           ...policy,
           version: 3,
-          champion: { early_card: true },
+          champion: { ...DEFAULT_FORMAT_VALUES, early_card: true },
           experiment,
         },
       });
@@ -573,7 +589,7 @@ describe('DecideReelsFormatUsecase', () => {
           verdict: 'ABORT',
           reason: 'worst_guard',
           policyAfter: expect.objectContaining({
-            champion: { early_card: false },
+            champion: { ...DEFAULT_FORMAT_VALUES, early_card: false },
           }),
           statsJson: expect.objectContaining({
             interruptedExperimentId: interruptedId,

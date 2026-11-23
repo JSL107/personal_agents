@@ -188,6 +188,24 @@ function html(timeline) {
     c.fillText('프로필에서 오늘 릴스 보기',W/2,420+h+110);
   }
 
+  // hook_frame=big_text: 첫 hook.until 초 동안 제목 카드·포인트·자막 대신 첫 줄만 크게(2026-11-23 시안 A).
+  // 대상 이름은 위 배지로 둔다. 마지막 줄을 주황으로 해 끝말(질문·결과)에 눈이 가게 한다.
+  function drawHook(c){
+    const cx=W/2;
+    if(T.hook.subject){
+      c.font='800 40px '+FONT; const w=c.measureText(T.hook.subject).width+56;
+      c.fillStyle='#FDE3C8'; roundRect(c,cx-w/2,360,w,64,32); c.fill();
+      c.fillStyle='#B85A12'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(T.hook.subject,cx,394);
+    }
+    c.font='900 116px '+FONT; c.textAlign='center'; c.textBaseline='alphabetic';
+    const lines=greedy(c,T.hook.text,940).slice(0,3);
+    lines.forEach((line,i)=>{
+      const y=600+i*150;
+      c.lineJoin='round'; c.lineWidth=22; c.strokeStyle='#FFFFFF'; c.strokeText(line,cx,y);
+      c.fillStyle=i===lines.length-1&&lines.length>1?'#E06E10':'#3F2613'; c.fillText(line,cx,y);
+    });
+  }
+
   function drawSubtitle(c,t){
     const sub=T.subtitles.find(s=>s.start<=t && t<s.end);
     if(!sub) return;
@@ -229,7 +247,8 @@ function html(timeline) {
     const c=document.getElementById('c').getContext('2d');
     if(T.cover && t>=T.cover.start){ drawCover(c); return; }
     c.fillStyle='#FDF5E7'; c.fillRect(0,0,W,H);
-    if(T.mode==='story') drawStoryTop(c); else drawPoints(c,t,drawHeader(c,t));
+    const hook=FX&&T.hook&&t<T.hook.until;
+    if(T.mode==='story') drawStoryTop(c); else if(hook) drawHook(c); else drawPoints(c,t,drawHeader(c,t));
 
     let cur=T.events[0]; for(const e of T.events){ if(e.start<=t) cur=e; }
     const dt=Math.max(0,t-cur.start);
@@ -261,7 +280,7 @@ function html(timeline) {
     drawFoot('foot-left',1,wk.lift[0]); drawFoot('foot-right',-1,wk.lift[1]);
     c.save(); c.translate(cx, ground-lift-wk.bob*k-(905-HIP)*k); c.rotate(tilt); c.scale(sx*k, sy*k);
     c.drawImage(image,-512,-HIP); c.restore();
-    drawSubtitle(c,t);  // 점프한 새싹이 자막을 가리지 않게 맨 마지막에 그린다
+    if(!hook) drawSubtitle(c,t);  // 점프한 새싹이 자막을 가리지 않게 맨 마지막에 그린다
   };</script>`;
 }
 
