@@ -202,7 +202,7 @@ const bitCount = (mask: number): number =>
 
 // 꼭지 수는 영상 길이를 바꿔 평균 시청의 기준 자체가 달라진다. 짧은 쪽이 늘 불리해지므로 시청을 표본 조건·가드로 쓰지 않는다(#1001 후속 메모).
 export const watchGuardApplies = (knob: FormatKnob): boolean =>
-  knob !== 'segments';
+  knob !== FormatKnob.SEGMENTS;
 
 export const collectSamples = ({
   policy,

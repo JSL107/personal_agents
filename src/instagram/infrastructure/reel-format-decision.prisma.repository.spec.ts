@@ -6,13 +6,13 @@ import {
   ReelFormatDecisionReason,
   ReelFormatVerdict,
 } from '../domain/format-decision.policy';
-import { DEFAULT_FORMAT_VALUES } from '../domain/format-policy';
+import { DEFAULT_FORMAT_VALUES, FormatKnob } from '../domain/format-policy';
 import { ReelFormatDecisionInput } from '../domain/port/reel-format-decision.repository.port';
 import { ReelFormatDecisionPrismaRepository } from './reel-format-decision.prisma.repository';
 
 const row: ReelFormatDecisionInput = {
   experimentId: 'early_card-2026-11-10',
-  knob: 'early_card',
+  knob: FormatKnob.EARLY_CARD,
   championValue: false,
   challengerValue: true,
   nChampion: 6,
