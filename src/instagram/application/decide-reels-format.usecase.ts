@@ -20,6 +20,7 @@ import {
   ReelFormatDecisionMode,
   ReelFormatDecisionReason,
   ReelFormatVerdict,
+  summarizeReach,
   WorstGuardResult,
 } from '../domain/format-decision.policy';
 import {
@@ -451,6 +452,14 @@ export class DecideReelsFormatUsecase {
 
   private summarizeJudgment(judgment: ConclusiveJudgment): string {
     const { stats } = judgment;
+    const championReach = summarizeReach({
+      samples: stats.samples,
+      arm: 'champion',
+    });
+    const challengerReach = summarizeReach({
+      samples: stats.samples,
+      arm: 'challenger',
+    });
     return JSON.stringify({
       nChampion: stats.nChampion,
       nChallenger: stats.nChallenger,
@@ -462,6 +471,8 @@ export class DecideReelsFormatUsecase {
       pValue: stats.pValue,
       excluded: stats.excluded,
       publishRates: stats.publishRates,
+      championReach,
+      challengerReach,
       verdict: judgment.verdict,
       reason: judgment.reason,
     });

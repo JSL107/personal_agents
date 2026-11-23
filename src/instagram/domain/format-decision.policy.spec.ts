@@ -14,6 +14,7 @@ import {
   ReelFormatVerdict,
   SampleCollection,
   ScoredSample,
+  summarizeReach,
 } from './format-decision.policy';
 import {
   assignArm,
@@ -643,5 +644,51 @@ describe('planRecovery', () => {
     expect(
       planRecovery({ state: { kind: 'missing' }, latest: null }),
     ).toBeNull();
+  });
+});
+
+describe('summarizeReach', () => {
+  it('군별 평균 도달과 150명 넘긴 편수를 세고 도달이 없는 옛 표본은 뺀다', () => {
+    const samples: ScoredSample[] = [
+      { ...sample('champion', 0, 80), reach: 112 },
+      { ...sample('champion', 1, 80), reach: 150 },
+      { ...sample('champion', 2, 80), reach: null },
+      sample('champion', 3, 80),
+      { ...sample('challenger', 4, 70), reach: 149 },
+    ];
+    expect(summarizeReach({ samples, arm: 'champion' })).toEqual({
+      n: 2,
+      meanReach: 131,
+      breakouts: 1,
+    });
+    expect(summarizeReach({ samples, arm: 'challenger' })).toEqual({
+      n: 1,
+      meanReach: 149,
+      breakouts: 0,
+    });
+    expect(summarizeReach({ samples: [], arm: 'champion' })).toEqual({
+      n: 0,
+      meanReach: null,
+      breakouts: 0,
+    });
+  });
+  it('표본 수집은 스냅숏의 도달을 표본에 싣는다', () => {
+    const result = collectSamples({
+      policy: POLICY,
+      posts: [post('2026-11-01')],
+      snapshots: [
+        snapshot('2026-11-01', {
+          metrics: {
+            views: 100,
+            skipRate: 70,
+            avgWatchMs: 5000,
+            reach: 160,
+          } as InsightSnapshot['metrics'],
+        }),
+      ],
+      today: '2026-11-10',
+      now: new Date('2026-11-20'),
+    });
+    expect([...result.champion, ...result.challenger][0].reach).toBe(160);
   });
 });
