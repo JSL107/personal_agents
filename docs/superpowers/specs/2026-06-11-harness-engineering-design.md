@@ -9,7 +9,7 @@
 
 `acme-slack-bot` 감사에서 얻은 핵심 통찰: **"규칙은 풍부한데 자동 강제가 없다."** 이 레포도 동일 — CLAUDE.md/AGENTS.md 에 에이전트표·env 규칙이 상세하지만 모두 수동 동기다.
 
-`sbe` 의 하네스를 *통째로 복사하지 않는다*(org 규칙: 불필요한 cross-repo 현대화 회피). 대신 **이 레포가 실제로 드리프트하는 지점**(env, 에이전트 레지스트리)에만 docs-as-code + 게이트를 적용하고, sbe 의 *철학*(코드 SoT → 문서 생성 → `--check` 로 CI 강제)을 repo-native 로 재구현한다.
+`acme` 의 하네스를 *통째로 복사하지 않는다*(org 규칙: 불필요한 cross-repo 현대화 회피). 대신 **이 레포가 실제로 드리프트하는 지점**(env, 에이전트 레지스트리)에만 docs-as-code + 게이트를 적용하고, acme 의 *철학*(코드 SoT → 문서 생성 → `--check` 로 CI 강제)을 repo-native 로 재구현한다.
 
 이미 적용된 기반(별도 작업): `.github/workflows/ci.yml`(lint+test+build 강제), `scripts/check-env-sync.cjs`(`.env.example` ⇄ `app.config.ts` 체커), `app.config.ts` 의 `CLAUDE_MODEL` 드리프트 수정.
 
@@ -41,11 +41,11 @@
   2. `slashCommands` 중복 없음, 형식 `^/[\w가-힣-]+$`.
   3. `usecasePath` 가 실제 존재하는 파일 (fs.existsSync).
 
-> 이는 sbe 의 TEST-MANIFEST 양방향 동기 철학을 "에이전트 레지스트리"에 적용한 것.
+> 이는 acme 의 TEST-MANIFEST 양방향 동기 철학을 "에이전트 레지스트리"에 적용한 것.
 
 ## 2. 컴포넌트 B — sync-docs 생성기 + `--check`
 
-- 신규 `scripts/sync-docs.cjs` (순수 node, sbe `sync-docs.cjs` 대응). 두 SoT 를 파싱:
+- 신규 `scripts/sync-docs.cjs` (순수 node, acme `sync-docs.cjs` 대응). 두 SoT 를 파싱:
   - **env**: `src/config/app.config.ts` — 각 속성의 이름, `@IsOptional` 유무(필수/선택), 속성 직전 `//` 주석 블록(데코레이터 라인 건너뛰고 수집)을 설명으로. → README 환경변수 표.
   - **agents**: `src/agent-registry/agent-registry.ts`(텍스트 파싱) + `model-router.usecase.ts` 의 `AGENT_TO_PROVIDER`(텍스트 파싱) → README 슬래시/에이전트 표.
 - README 에 마커 삽입: `<!-- GENERATED:env:start -->` … `:end`, `<!-- GENERATED:agents:start --> … :end`. 생성기는 마커 사이만 치환. (현 수동 "환경변수"·"Slack 슬래시 커맨드" 섹션을 마커 블록으로 교체.)
@@ -108,7 +108,7 @@ prisma:generate → check:env → docs:check → lint:check → test → build
 
 ## 7. 의도적 제외 (YAGNI)
 
-- `.env.example` 자동 생성 (권한 + sbe 도 수동).
+- `.env.example` 자동 생성 (권한 + acme 도 수동).
 - env-catalog.json 별도 시스템 (README 생성으로 충분).
 - 풀 e2e(실 에이전트 1개라도 부팅) — 에이전트당 ~8개 전이 의존성 mock 필요, 과투자.
 - `.ai-context` 핸드오프 — Serena memory + docs/superpowers 와 중복.
@@ -118,7 +118,7 @@ prisma:generate → check:env → docs:check → lint:check → test → build
 구현하며 설계 §2 에서 다음을 조정함 (이유 명시):
 
 - **생성기는 `scripts/sync-docs.ts` (ts-node)** — `.cjs` 대신 `.ts`. 레지스트리를 텍스트 파싱하지 않고 `import` 로 안전하게 읽기 위함(멀티라인 객체 파싱 fragility 회피). `AGENT_TO_PROVIDER`(model) 만 안정적 단일라인 패턴이라 텍스트 파싱.
-- **README 마커 덮어쓰기 대신 `docs/agent-catalog.md` + `docs/env-catalog.md` 별도 생성** — 현 README 의 env/슬래시 섹션이 "발췌 + 그룹핑 + 부속키 묶음"으로 잘 큐레이션돼 있어, 56개 평면 덤프로 덮으면 오히려 나빠짐. 큐레이션 README 는 보존하고 머신-정확 카탈로그를 별도 파일로 생성(+`--check` 게이트). sbe 의 env-catalog 분리 방식과 동일. (사용자 합의: "접두사 그룹 추론 보존" → env-catalog 가 접두사 그룹.)
+- **README 마커 덮어쓰기 대신 `docs/agent-catalog.md` + `docs/env-catalog.md` 별도 생성** — 현 README 의 env/슬래시 섹션이 "발췌 + 그룹핑 + 부속키 묶음"으로 잘 큐레이션돼 있어, 56개 평면 덤프로 덮으면 오히려 나빠짐. 큐레이션 README 는 보존하고 머신-정확 카탈로그를 별도 파일로 생성(+`--check` 게이트). acme 의 env-catalog 분리 방식과 동일. (사용자 합의: "접두사 그룹 추론 보존" → env-catalog 가 접두사 그룹.)
 - **교차검증은 `AGENT_TO_PROVIDER` 대신 `AgentType` enum 대조** — `AGENT_TO_PROVIDER: Record<AgentType, ...>` 타입이 provider 완전성을 컴파일타임 보장하므로, enum 일치 검사가 곧 provider 일치를 함의. (AGENT_TO_PROVIDER 는 모듈 private 이라 import 불가이기도 함.)
 
 검증 결과: check:env / docs:check / lint:check(0 errors) / build / test(122 suites, 1035 tests) 전부 green. 게이트 음성 테스트(드리프트·레지스트리 누락 시 실패)도 확인.

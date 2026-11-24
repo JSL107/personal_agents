@@ -10,8 +10,6 @@
  */
 import { Client } from '@notionhq/client';
 
-const PARENT_PAGE_ID = '34b69cbba394807588c4e2e5b95f4be9';
-
 // KST 기준 "YYYY-MM-DD (요일)". ko-KR 의 weekday:'short' 는 "금" 한 글자라 별도 절단 불필요.
 const buildDailyTitle = (): string => {
   const now = new Date();
@@ -86,21 +84,27 @@ const main = async (): Promise<void> => {
   if (!token) {
     throw new Error('NOTION_TOKEN 미설정 — --env-file=.env 를 붙였는지 확인');
   }
+  const parentPageId = process.env.CAREER_LOG_NOTION_PAGE_ID;
+  if (!parentPageId) {
+    throw new Error(
+      'CAREER_LOG_NOTION_PAGE_ID 미설정 — --env-file=.env 를 붙였는지 확인',
+    );
+  }
   const client = new Client({ auth: token });
 
   const title = buildDailyTitle();
   console.log(`[1/3] 오늘 KST 자식 페이지 title: "${title}"`);
 
   console.log(
-    `[2/3] findOrCreateChildPage(parent=${PARENT_PAGE_ID}, title="${title}")`,
+    `[2/3] findOrCreateChildPage(parent=${parentPageId}, title="${title}")`,
   );
-  const first = await findOrCreateChildPage(client, PARENT_PAGE_ID, title);
+  const first = await findOrCreateChildPage(client, parentPageId, title);
   console.log(
     `     ✅ ${first.created ? '신규 생성' : '기존 재사용'} — pageId=${first.id}`,
   );
 
   console.log(`[3/3] 동일 title 두 번째 호출 — 멱등성 (재사용) 검증`);
-  const second = await findOrCreateChildPage(client, PARENT_PAGE_ID, title);
+  const second = await findOrCreateChildPage(client, parentPageId, title);
   if (second.created) {
     throw new Error(
       `멱등성 깨짐 — 두 번째 호출에서 신규 생성됨 (id=${second.id})`,
@@ -136,7 +140,7 @@ const main = async (): Promise<void> => {
   });
   console.log(`     ✅ append OK\n`);
   console.log(
-    `결론: 부모 "${PARENT_PAGE_ID}" 아래 일별 자식 페이지 "${title}" — 생성/조회/append 모두 동작.`,
+    `결론: 부모 "${parentPageId}" 아래 일별 자식 페이지 "${title}" — 생성/조회/append 모두 동작.`,
   );
   console.log(
     `\nNotion 페이지를 새로고침하면 부모 페이지에 "${title}" 자식 페이지가 보이고, 그 안에 검증 라인이 누적됩니다.`,
