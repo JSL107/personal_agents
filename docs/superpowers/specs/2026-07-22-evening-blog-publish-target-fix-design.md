@@ -11,7 +11,7 @@
 `EveningBlogPublishApplier`는 `EVENING_RETRO_BLOG_NOTION_PAGE_ID`가 가리키는 페이지 밑에 자식 페이지를 만든다(`evening-blog-publish.applier.ts:79-91`). 그런데 이 값이 경력 로그 페이지와 동일하게 설정돼 있었다.
 
 ```
-EVENING_RETRO_BLOG_NOTION_PAGE_ID = 34b69cbba394807588c4e2e5b95f4be9   → "학교종이" (경력 로그)
+EVENING_RETRO_BLOG_NOTION_PAGE_ID = 34b69cbba394807588c4e2e5b95f4be9   → "예시회사" (경력 로그)
 CAREER_LOG_NOTION_PAGE_ID         = 34b69cbba394807588c4e2e5b95f4be9   → 동일
 ```
 

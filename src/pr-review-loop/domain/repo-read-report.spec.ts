@@ -5,7 +5,7 @@ const PREVIOUS_WINDOW_START = new Date('2026-10-31T00:00:00Z');
 const CURRENT = new Date('2026-11-20T00:00:00Z');
 const PREVIOUS = new Date('2026-11-05T00:00:00Z');
 const REPO = 'JSL107/personal_agents';
-const OTHER = 'schoolbell-e/sbe-api-v5';
+const OTHER = 'acme-corp/acme-api-v5';
 
 const run = (
   overrides: Partial<Parameters<typeof summarizeRepoRead>[0]['runs'][0]>,

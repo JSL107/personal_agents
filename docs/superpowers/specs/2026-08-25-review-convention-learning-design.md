@@ -73,9 +73,9 @@ migration 관련 지적 (이 레포):  2026-07-31  1건
 |---|---|---|
 | JSL107/personal_agents | 288 | 15 |
 | DDD-Community/DDD_BE | 63 | 0 |
-| schoolbell-e/sbe-api-v5 | 57 | 2 |
-| schoolbell-e/sbe-api-v4 | 21 | 0 |
-| schoolbell-e/sbe-api-v5-puppeteer | 6 | 1 |
+| acme-corp/acme-api-v5 | 57 | 2 |
+| acme-corp/acme-api-v4 | 21 | 0 |
+| acme-corp/acme-api-v5-puppeteer | 6 | 1 |
 
 ---
 
@@ -149,7 +149,7 @@ renderLearnedConventions(rows)          ← 순수 함수
 2칸 중 하나를 차지했고, 근거가 실린 카드 193 이 밀려났다. → **하한 40자**를 두어 한 줄
 요약을 뺀다. 이유 없는 기각을 빼는 것과 같은 이유다.
 
-효과: `RELIABILITY` 는 근거 있는 이유가 1건뿐이라 카테고리째 빠지고, `schoolbell-e/sbe-api-v5`
+효과: `RELIABILITY` 는 근거 있는 이유가 1건뿐이라 카테고리째 빠지고, `acme-corp/acme-api-v5`
 는 기각 2건이 모두 `전제 불성립으로 변경 거부`(14자)라 규약이 서지 않는다. 둘 다 옳은 결과다.
 
 **② 여러 줄 이유가 상한에서 잘리면 항목 경계가 흐려진다.** 기각 이유는 코드블록과 목록이
@@ -163,8 +163,8 @@ renderLearnedConventions(rows)          ← 순수 함수
 | 레포 | 90일 기각 | 규약이 선 카테고리 | 블록 |
 |---|---|---|---|
 | JSL107/personal_agents | 13건 | `ARCHITECTURE`(2) · `CORRECTNESS`(5) | 1,877자 |
-| schoolbell-e/sbe-api-v5 | 2건 | 없음 (둘 다 14자 요약) | 0자 |
-| schoolbell-e/sbe-api-v5-puppeteer | 1건 | 없음 (임계 미달) | 0자 |
+| acme-corp/acme-api-v5 | 2건 | 없음 (둘 다 14자 요약) | 0자 |
+| acme-corp/acme-api-v5-puppeteer | 1건 | 없음 (임계 미달) | 0자 |
 
 `ARCHITECTURE` 두 자리에는 의도한 대로 카드 373·193 — 근거를 각각 12곳·4곳 나열한 답변 —
 이 들어갔다. 이 기능이 없애려던 반복 지적의 원인이 정확히 그 두 건이다.

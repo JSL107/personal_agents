@@ -853,7 +853,7 @@ const buildRecoveryFact = (
 });
 
 // 회수 label 은 `truncateLabel` 을 쓰지 않는다 — 키가 30자를 넘으면 **번호가 잘려**
-// 어느 항목인지 알 수 없게 된다(실측: `schoolbell-e/sbe-api-v5-puppeteer#135` 는 37자).
+// 어느 항목인지 알 수 없게 된다(실측: `acme-corp/acme-api-v5-puppeteer#135` 는 37자).
 // owner 를 떼고 `repo#N` 만 남긴다. 전체 경로는 url 로 따라간다.
 const toRecoveryLabel = (key: string): string => {
   const slashIndex = key.indexOf('/');

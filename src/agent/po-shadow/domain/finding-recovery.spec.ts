@@ -227,7 +227,7 @@ describe('buildFindingRecoveryFacts — 네 갈래가 전수를 덮는다', () =
 });
 
 describe('회수 사실의 label·url — 실측 키가 잘리지 않아야 한다', () => {
-  const longKey = 'schoolbell-e/sbe-api-v5-puppeteer#135';
+  const longKey = 'acme-corp/acme-api-v5-puppeteer#135';
 
   it('owner 를 떼어 번호를 보존한다 (37자 키가 30자 절단에 걸리던 것)', () => {
     const result = buildFindingRecoveryFacts({
@@ -238,7 +238,7 @@ describe('회수 사실의 label·url — 실측 키가 잘리지 않아야 한�
       ]),
       now: NOW,
     });
-    expect(result.facts[0].label).toBe('sbe-api-v5-puppeteer#135');
+    expect(result.facts[0].label).toBe('acme-api-v5-puppeteer#135');
     expect(result.facts[0].label).toContain('#135');
   });
 
@@ -259,7 +259,7 @@ describe('회수 사실의 label·url — 실측 키가 잘리지 않아야 한�
       now: NOW,
     });
     expect(result.facts[0].url).toBe(
-      'https://github.com/schoolbell-e/sbe-api-v5-puppeteer/pull/135',
+      'https://github.com/acme-corp/acme-api-v5-puppeteer/pull/135',
     );
   });
 });

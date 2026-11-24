@@ -24,7 +24,7 @@
 2026-10-13: 「목표 밖」 스윕 회차 겹침 — 10-07 이중 리뷰는 재시작으로 끊긴 회차가 stalled 로 회수돼 정규 회차와 겹친 것이었다. 실행 중이면 다음 회차를 skip 하도록 고쳤다.
 2026-10-13: 「목표 밖」 문구만 다른 중복 지적 — 회차 겹침 밖에서 새로 확인한 경로는 같은 head 의 draft→ready 재리뷰다(09-17 이후 게시 649건 중 10건). 막으면 재리뷰가 처음 찾은 지적 7건을 잃어 고치지 않고 닫았다.
 2026-10-13: 「목표 밖」 스윕 회차 겹침의 관측 한계 — worker 에 stalled·error 로그를 달아(#792) 다음 stalled 회수는 서버 로그로 바로 보인다.
-2026-10-13: 목표 12 구현 — 기각 학습 규약을 `sbe-spinoff-workspace` 에도 싣고 채택률을 레포별로 따로 낸다. 효과 판정은 배포 30일 뒤.
+2026-10-13: 목표 12 구현 — 기각 학습 규약을 `acme-spinoff-workspace` 에도 싣고 채택률을 레포별로 따로 낸다. 효과 판정은 배포 30일 뒤.
 2026-10-13: 목표 11 재측정(표본 B, 246회) — 입력 → 결과 추적 문장만으로도 효과가 회차 변동 안이고 REJECTED 1장이 되살아나 넣지 않았다. 「남은 순서」 섹션을 새로 등록했다(A·B·E·G 완료/종결 표시).
 
 ---
@@ -379,18 +379,18 @@ ARCHITECTURE 1. 기각 재료(39건 중 이유 있는 33건)보다 **3.5배 많�
 
 | 레포 | 채택 | 기각 | 채택률 |
 |---|---|---|---|
-| `sbe-api-v5-puppeteer` | 59 | 1 | 98.3% |
-| `sbe-api-v4` | 26 | 1 | 96.3% |
+| `acme-api-v5-puppeteer` | 59 | 1 | 98.3% |
+| `acme-api-v4` | 26 | 1 | 96.3% |
 | `DDD_BE` | 37 | 2 | 94.9% |
 | `personal_agents` | 463 | 26 | 94.7% |
-| `sbe-api-v5` | 90 | 8 | 91.8% |
+| `acme-api-v5` | 90 | 8 | 91.8% |
 
 전 레포가 92~98% 다. **스펙 4단계 ⓐ(억제 규약을 회사 레포로 개방)가 얻을 수 있는 최대치가
 2~8%p** 라 후순위가 맞다. 단 이 숫자는 **정밀도만** 재고 재현율은 못 잰다 — 시스템 프롬프트가
 "확인 못 한 것은 지적하지 않는다" 로 조여 놨으므로, 안 틀리는 대신 안 하고 있을 수 있다.
 
 **④ 대상 레포의 문서량** (문서를 도메인 지식 출처로 쓰는 안의 재료):
-`sbe-api-v5` AGENTS.md 2.6KB + README 3.2KB / `sbe-api-v4` README 9.8KB / `puppeteer` README 2.5KB /
+`acme-api-v5` AGENTS.md 2.6KB + README 3.2KB / `acme-api-v4` README 9.8KB / `puppeteer` README 2.5KB /
 `DDD_BE` **CODE_RULES.md 17.8KB** / `personal_agents` CLAUDE 218줄 + AGENTS 164줄 + CODE_RULES 388줄.
 단 `code-reviewer-system.prompt.ts` 주석이 이미 실측으로 기각한 방향이다 — "규약 전문
 (CODE_RULES.md 385줄)을 넣으면 토큰만 늘고 지적이 희석된다". 그리고 정작 진짜 도메인 지식이던
@@ -472,7 +472,7 @@ ARCHITECTURE 1. 기각 재료(39건 중 이유 있는 33건)보다 **3.5배 많�
   그 상태를 못 걸러낸다.**
 
 **할 일**
-1. 회사 레포(`sbe-api-v5` 등 — `@gemini-code-assist` 가 붙는 곳)의 최근 PR 에서,
+1. 회사 레포(`acme-api-v5` 등 — `@gemini-code-assist` 가 붙는 곳)의 최근 PR 에서,
    gemini 인라인 코멘트와 같은 PR 의 이대리 카드를 PR 단위로 대조한다.
 2. **gemini 만 지적한 항목**을 뽑아 코드로 정탐/오탐을 판정한다. 봇 지적이라고 다 정탐이 아니다 —
    맹종·맹반 금지, 파일:라인 근거로 판정한다.
@@ -583,13 +583,13 @@ ARCHITECTURE 1. 기각 재료(39건 중 이유 있는 33건)보다 **3.5배 많�
 
 - **결과**: **876건 백필 완료, 못 가져온 것 44건** — `scripts/backfill-accept-reply.ts`.
   - **재집계 (2026-10-12)**: ACKED 1,120건 중 `accept_reply` 가 빈 카드 **920건**(PR 438). 위 562건은 작성 당시 값이다.
-    레포별 personal_agents 535 · sbe-spinoff-workspace 164 · sbe-api-v5 89 · sbe-api-v5-puppeteer 69 ·
-    DDD_BE 39 · sbe-api-v4 20 · sbe-survey-v5 4. `github_comment_id` 가 없는 카드는 0건.
+    레포별 personal_agents 535 · acme-spinoff-workspace 164 · acme-api-v5 89 · acme-api-v5-puppeteer 69 ·
+    DDD_BE 39 · acme-api-v4 20 · acme-survey-v5 4. `github_comment_id` 가 없는 카드는 0건.
   - **미리보기 결과**: 백필 가능 **876건**, 못 가져온 것 **44건**.
     | 사유 | 건수 |
     |---|---|
-    | owner 답글이 카드 확정(`decided_at`) 뒤에만 있음 | 42 (personal_agents 26 · sbe-spinoff-workspace 9 · sbe-api-v5-puppeteer 4 · sbe-api-v4 3) |
-    | owner 아닌 사람 답글만 있음(함정 7로 제외) | 2 (sbe-api-v4#273 카드 437·438) |
+    | owner 답글이 카드 확정(`decided_at`) 뒤에만 있음 | 42 (personal_agents 26 · acme-spinoff-workspace 9 · acme-api-v5-puppeteer 4 · acme-api-v4 3) |
+    | owner 아닌 사람 답글만 있음(함정 7로 제외) | 2 (acme-api-v4#273 카드 437·438) |
     | 조직 레포 권한 부족(403/404) · 조회 오류 · 봇 코멘트 삭제 | 0 · 0 · 0 |
     | 스레드 페이지 잘림 | 해당 없음 — REST `/pulls/{n}/comments` 를 끝까지 페이지네이션했다. 대상 중 운영 GraphQL 상한(스레드 50·코멘트 20)을 넘는 스레드도 0건 |
   - **추출 규칙은 운영 수확과 같다**: 봇 코멘트와 같은 스레드에서, 봇 코멘트보다 늦고 **카드 확정 시각 이전**에
@@ -753,9 +753,9 @@ ARCHITECTURE 1. 기각 재료(39건 중 이유 있는 33건)보다 **3.5배 많�
 ## 목표 12 — 스펙 4단계 ⓐ: 기각 학습 규약을 회사 레포 한 곳에 연다
 
 - [ ] **상태**: 구현 완료 (2026-10-13), 효과 측정 대기 — 배포일 기준 30일 뒤 판정.
-- **왜**: `sbe-spinoff-workspace` 30일 기각 14건이 같은 유형으로 되풀이된다(PR 본문 「리뷰 범위」 안내를 프롬프트 주입으로
+- **왜**: `acme-spinoff-workspace` 30일 기각 14건이 같은 유형으로 되풀이된다(PR 본문 「리뷰 범위」 안내를 프롬프트 주입으로
   오인한 SECURITY 3, k8s overlay env 를 테스트로 고정하라는 TEST 2, 기존 spec 이 이미 덮는 TEST 3). 레포 고유 사정이라
-  personal_agents 규약으로는 안 막힌다. 다른 회사 레포는 표본이 작아(sbe-api-v5 30일 2건) 이번에는 열지 않는다.
+  personal_agents 규약으로는 안 막힌다. 다른 회사 레포는 표본이 작아(acme-api-v5 30일 2건) 이번에는 열지 않는다.
 - **결과**:
   - 게이트를 `isSelfRepo` 에서 허용 목록 `LEARNING_REPOS`(personal_agents + spinoff, `learning-repo.ts` 한 곳)로 바꿨다.
     기각 규약(`buildLearnedConventions`)과 채택률 집계만 옮기고, 손으로 적은 규약·`[related code]` 는 자기 레포 전용 그대로다.
@@ -769,8 +769,8 @@ ARCHITECTURE 1. 기각 재료(39건 중 이유 있는 33건)보다 **3.5배 많�
     SECURITY 는 학습 금지 분류라(`NEVER_LEARNED_CATEGORIES`) 「리뷰 범위」 오인 3건은 0건, 분류당 최근 2건 상한 때문에 k8s 2건도 0건,
     기존 spec 유형은 3건 중 1495 만 실린다. 반복 유형 8건 중 1건. 사용자 결정(2026-10-13)으로 선택 규칙은 그대로 두고 게이트만 연다.
     「리뷰 범위」 오인은 학습이 아니라 손으로 적는 규약이나 프롬프트 쪽 후속 후보다.
-  - 실증: `review:dry` 경로로 spinoff #3921 에 「학습 규약 주입 (schoolbell-e/sbe-spinoff-workspace): CORRECTNESS, TEST — 기각 14건 기준」
-    로그 확인, sbe-api-v5 #1211 은 주입 로그 없음. 두 실행 모두 카드 0건(게시 없음).
+  - 실증: `review:dry` 경로로 spinoff #3921 에 「학습 규약 주입 (acme-corp/acme-spinoff-workspace): CORRECTNESS, TEST — 기각 14건 기준」
+    로그 확인, acme-api-v5 #1211 은 주입 로그 없음. 두 실행 모두 카드 0건(게시 없음).
 - **효과 측정 계획**: 기준선(배포 전 30일, spinoff) TEST 기각 6/120(5.0%) · CORRECTNESS 3/63(4.8%) · 전체 14/283(4.9%).
   배포 후 30일 같은 분류별 기각률을 레포별로 비교하고, 반복 3유형 재발을 건별로 본다. 기각이 하루 약 0.15건이라 30일 4~5건 수준 —
   비율만으로는 판정이 어렵다. 정탐 후퇴는 TEST·CORRECTNESS 채택 건수/PR 로 함께 본다. 재생(`review:replay --holdout --trials 2`,
@@ -817,7 +817,7 @@ ARCHITECTURE 1. 기각 재료(39건 중 이유 있는 33건)보다 **3.5배 많�
   - stalled 재실행 흔적 없음: BullMQ 이벤트 스트림(10-10 23:51~10-13 09:40)에 `stalled`·`failed` 0건,
     active 1,938 = completed 1,938. 끝나지 못한 리뷰 행 17건 중 09-30 이후 3건은 모두 실행 중에 서버 재시작이 있었다
     (나머지 14건은 로그 공백 구간이라 원인 미확인). 같은 PR 10분 안 재리뷰 21건 중 20건은 설계된 draft→ready 재리뷰다.
-  - 남은 1건(10-07 09:54 `sbe-spinoff-workspace#3747`)은 스윕 회차 두 개가 겹쳐 0.7초 간격으로 이중 리뷰한 것이다.
+  - 남은 1건(10-07 09:54 `acme-spinoff-workspace#3747`)은 스윕 회차 두 개가 겹쳐 0.7초 간격으로 이중 리뷰한 것이다.
     리뷰 자체는 25·37초에 끝나 lock 길이와는 무관하다. 원인은 아래 「스윕 회차 겹침」 항목에서 확인했다.
 - ~~**스윕 회차 겹침으로 인한 이중 리뷰**~~ — **2026-10-13 원인 확인, 프로세스 안 실행 중 플래그로 고침.**
   - 경위: 09:33 슬롯 job 이 #3749 리뷰 중(agent_run 7435, 09:33:03 시작)에 09:37:26 재시작으로 끊겼다.

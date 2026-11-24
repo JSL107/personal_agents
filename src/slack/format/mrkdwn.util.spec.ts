@@ -8,7 +8,7 @@ describe('breakProseIntoSentences', () => {
   // 실제 PM 산출물과 같은 모양 — 문장마다 링크가 붙는다. 링크 없는 짧은 표본으로 재면
   // 화면 길이 판정이 실사용과 어긋난다.
   const longProse =
-    '현재 assigned이고 전일에도 미완료였던 PR #52를 마무리 최우선 작업으로 정했다 (<https://github.com/o/sbe-api-v5-puppeteer/pull/52|sbe-api-v5-puppeteer #52>). PR #1017은 5일 연속 정체돼 오늘 실행 목록에서 뺐다(<https://github.com/o/sbe-api-v5/pull/1017|sbe-api-v5 #1017>). 신규 assigned PR #994는 오전 집중 작업으로 배치했다 (<https://github.com/o/sbe-api-v5/pull/994|sbe-api-v5 #994>).';
+    '현재 assigned이고 전일에도 미완료였던 PR #52를 마무리 최우선 작업으로 정했다 (<https://github.com/o/acme-api-v5-puppeteer/pull/52|acme-api-v5-puppeteer #52>). PR #1017은 5일 연속 정체돼 오늘 실행 목록에서 뺐다(<https://github.com/o/acme-api-v5/pull/1017|acme-api-v5 #1017>). 신규 assigned PR #994는 오전 집중 작업으로 배치했다 (<https://github.com/o/acme-api-v5/pull/994|acme-api-v5 #994>).';
 
   it('긴 산문을 문장 끝에서 줄바꿈한다', () => {
     expect(breakProseIntoSentences(longProse).split('\n')).toHaveLength(3);

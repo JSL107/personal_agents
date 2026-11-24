@@ -85,7 +85,7 @@ describe('EveningBlogPublishApplier', () => {
         title: '제목',
         keywords: ['k1', 'k2'],
         reason: 'PR 근거가 구체적이다.',
-        sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+        sourceRefs: ['acme-corp/acme-api-v5#864'],
         outline: [
           '문제: 정합성 불일치가 있었다.',
           '접근: 동기화 경계를 보강했다.',
@@ -94,9 +94,9 @@ describe('EveningBlogPublishApplier', () => {
       },
       sourcePrs: [
         {
-          repo: 'schoolbell-e/sbe-api-v5',
+          repo: 'acme-corp/acme-api-v5',
           number: 864,
-          url: 'https://github.com/schoolbell-e/sbe-api-v5/pull/864',
+          url: 'https://github.com/acme-corp/acme-api-v5/pull/864',
           title: '정합성 수정',
           body: '실제 변경 내용',
         },
@@ -210,7 +210,7 @@ describe('EveningBlogPublishApplier', () => {
     });
 
     it('PR 초안은 회고 맥락을 그대로 싣는다', async () => {
-      await applyWith([makeSourcePr('schoolbell-e/sbe-api-v5', 1)]);
+      await applyWith([makeSourcePr('acme-corp/acme-api-v5', 1)]);
 
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).toContain(RETRO_CONTEXT);
@@ -223,7 +223,7 @@ describe('EveningBlogPublishApplier', () => {
 
       const sourceType = await applyWith([
         makeSourcePr('JSL107/personal_agents', 1),
-        makeSourcePr('schoolbell-e/sbe-api-v5', 2),
+        makeSourcePr('acme-corp/acme-api-v5', 2),
       ]);
 
       expect(sourceType).toEqual({ select: { name: 'PR' } });

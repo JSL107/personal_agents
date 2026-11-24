@@ -2,12 +2,12 @@
 
 - 작성일: 2026-06-11
 - 대상 레포: `personal_agents` (이대리, NestJS 10 / pnpm / Prisma)
-- 출처/영감: `sbe-slack-bot` 의 하네스 엔지니어링 (docs-as-code 생성 + 드리프트 게이트 + CI 강제 + 로컬 스모크 하네스)
+- 출처/영감: `acme-slack-bot` 의 하네스 엔지니어링 (docs-as-code 생성 + 드리프트 게이트 + CI 강제 + 로컬 스모크 하네스)
 - 상태: 설계 제안 — 사용자 리뷰 대기
 
 ## 0. 배경 · 원칙
 
-`sbe-slack-bot` 감사에서 얻은 핵심 통찰: **"규칙은 풍부한데 자동 강제가 없다."** 이 레포도 동일 — CLAUDE.md/AGENTS.md 에 에이전트표·env 규칙이 상세하지만 모두 수동 동기다.
+`acme-slack-bot` 감사에서 얻은 핵심 통찰: **"규칙은 풍부한데 자동 강제가 없다."** 이 레포도 동일 — CLAUDE.md/AGENTS.md 에 에이전트표·env 규칙이 상세하지만 모두 수동 동기다.
 
 `sbe` 의 하네스를 *통째로 복사하지 않는다*(org 규칙: 불필요한 cross-repo 현대화 회피). 대신 **이 레포가 실제로 드리프트하는 지점**(env, 에이전트 레지스트리)에만 docs-as-code + 게이트를 적용하고, sbe 의 *철학*(코드 SoT → 문서 생성 → `--check` 로 CI 강제)을 repo-native 로 재구현한다.
 

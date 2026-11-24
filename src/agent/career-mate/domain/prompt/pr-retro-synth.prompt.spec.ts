@@ -20,9 +20,9 @@ const VALID = JSON.stringify({
     techTags: ['NestJS', 'Notion API'],
     evidence: [
       {
-        repo: 'schoolbell-e/sbe-workspace',
+        repo: 'acme-corp/acme-workspace',
         pr: 1692,
-        url: 'https://github.com/schoolbell-e/sbe-workspace/pull/1692',
+        url: 'https://github.com/acme-corp/acme-workspace/pull/1692',
         mergedAt: '2026-06-30',
       },
     ],

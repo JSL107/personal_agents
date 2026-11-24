@@ -1401,7 +1401,7 @@ describe('OctokitGithubClient', () => {
     it('레포가 많아도 검색은 한 번이고 어느 레포도 빠뜨리지 않는다', async () => {
       const repos = Array.from(
         { length: 12 },
-        (_, index) => `schoolbell-e/sbe-repo-${index}`,
+        (_, index) => `acme-corp/acme-repo-${index}`,
       );
       const { octokit, search, prGet } = buildOctokit([]);
       const client = new OctokitGithubClient(octokit);

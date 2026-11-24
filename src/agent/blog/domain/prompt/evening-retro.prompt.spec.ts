@@ -22,7 +22,7 @@ const countOccurrences = (text: string, token: string): number =>
 describe('parseEveningRetroOutput', () => {
   it('코드펜스로 감싼 JSON 을 파싱한다', () => {
     const text =
-      '```json\n{"retrospective":{"keep":"가드를 강제조건에서 검증했다","problem":"확인 없이 결론을 썼다","tryNext":"결론 전에 명령을 한 번 돌린다","carryOver":"#605 리베이스가 남았다"},"candidates":[{"title":"T","keywords":["k1"],"blogValueScore":80,"reason":"R","sourceRefs":["schoolbell-e/sbe-api-v5#864"],"outline":["문제","접근","결과"]}],"prNotes":[{"ref":"schoolbell-e/sbe-api-v5#864","note":"정합성 문제를 트랜잭션으로 보강"}]}\n```';
+      '```json\n{"retrospective":{"keep":"가드를 강제조건에서 검증했다","problem":"확인 없이 결론을 썼다","tryNext":"결론 전에 명령을 한 번 돌린다","carryOver":"#605 리베이스가 남았다"},"candidates":[{"title":"T","keywords":["k1"],"blogValueScore":80,"reason":"R","sourceRefs":["acme-corp/acme-api-v5#864"],"outline":["문제","접근","결과"]}],"prNotes":[{"ref":"acme-corp/acme-api-v5#864","note":"정합성 문제를 트랜잭션으로 보강"}]}\n```';
     const result = parseEveningRetroOutput(text);
     expect(result.retrospective).toEqual({
       keep: '가드를 강제조건에서 검증했다',
@@ -33,7 +33,7 @@ describe('parseEveningRetroOutput', () => {
     expect(result.candidates[0].blogValueScore).toBe(80);
     expect(result.candidates[0].keywords).toEqual(['k1']);
     expect(result.candidates[0].sourceRefs).toEqual([
-      'schoolbell-e/sbe-api-v5#864',
+      'acme-corp/acme-api-v5#864',
     ]);
     expect(result.candidates[0]).toHaveProperty('outline', [
       '문제',
@@ -42,7 +42,7 @@ describe('parseEveningRetroOutput', () => {
     ]);
     expect(result).toHaveProperty('prNotes', [
       {
-        ref: 'schoolbell-e/sbe-api-v5#864',
+        ref: 'acme-corp/acme-api-v5#864',
         note: '정합성 문제를 트랜잭션으로 보강',
       },
     ]);
@@ -70,14 +70,14 @@ describe('parseEveningRetroOutput', () => {
   it('prNotes 가 배열이 아니면 빈 배열, ref 가 비면 제외한다', () => {
     const missingNotesText = '{"retrospective":{"keep":"r"},"candidates":[] }';
     const mixedNotesText =
-      '{"retrospective":{"keep":"r"},"candidates":[],"prNotes":[{"ref":"schoolbell-e/sbe-api-v5#864","note":"노트"},{"ref":"","note":"제외"},{"note":"ref 없음"}]}';
+      '{"retrospective":{"keep":"r"},"candidates":[],"prNotes":[{"ref":"acme-corp/acme-api-v5#864","note":"노트"},{"ref":"","note":"제외"},{"note":"ref 없음"}]}';
 
     expect(parseEveningRetroOutput(missingNotesText)).toHaveProperty(
       'prNotes',
       [],
     );
     expect(parseEveningRetroOutput(mixedNotesText)).toHaveProperty('prNotes', [
-      { ref: 'schoolbell-e/sbe-api-v5#864', note: '노트' },
+      { ref: 'acme-corp/acme-api-v5#864', note: '노트' },
     ]);
   });
 
@@ -248,9 +248,9 @@ describe('buildEveningRetroPrompt', () => {
     const prompt = buildEveningRetroPrompt({
       mergedPrs: [
         {
-          repo: 'schoolbell-e/sbe-api-v5',
+          repo: 'acme-corp/acme-api-v5',
           number: 864,
-          url: 'https://github.com/schoolbell-e/sbe-api-v5/pull/864',
+          url: 'https://github.com/acme-corp/acme-api-v5/pull/864',
           title: '회사 PR',
           body: '본문',
           source: 'company',
@@ -269,7 +269,7 @@ describe('buildEveningRetroPrompt', () => {
       dailyEvalText: null,
     });
 
-    expect(prompt).toContain('[회사 실무][schoolbell-e/sbe-api-v5#864]');
+    expect(prompt).toContain('[회사 실무][acme-corp/acme-api-v5#864]');
     expect(prompt).toContain('[개인 프로젝트][JSL107/personal_agents#142]');
   });
 
@@ -349,9 +349,9 @@ describe('buildEveningBlogBodyPrompt', () => {
       retroContext: '오늘 회고',
       sourcePrs: [
         {
-          repo: 'schoolbell-e/sbe-api-v5',
+          repo: 'acme-corp/acme-api-v5',
           number: 864,
-          url: 'https://github.com/schoolbell-e/sbe-api-v5/pull/864',
+          url: 'https://github.com/acme-corp/acme-api-v5/pull/864',
           title: 'user_to_group 정합성 수정',
           body: '문제는 group_members 와 user_to_group 간 정합성 불일치였다.',
         },
@@ -361,7 +361,7 @@ describe('buildEveningBlogBodyPrompt', () => {
     expect(prompt).toContain('## 왜 쓸 가치');
     expect(prompt).toContain('실제 장애 원인과 해결 과정을 설명할 수 있다.');
     expect(prompt).toContain('## 근거 PR');
-    expect(prompt).toContain('[schoolbell-e/sbe-api-v5#864]');
+    expect(prompt).toContain('[acme-corp/acme-api-v5#864]');
     expect(prompt).toContain('정합성 불일치였다.');
   });
 

@@ -33,7 +33,7 @@ describe('classifyRepoSource', () => {
   });
 
   it('personalRepos 에 매칭되지 않으면 company 로 분류한다', () => {
-    const result = classifyRepoSource('schoolbell-e/sbe-api-v5', [
+    const result = classifyRepoSource('acme-corp/acme-api-v5', [
       'JSL107/personal_agents',
     ]);
 
@@ -60,7 +60,7 @@ describe('classifyRepoSource', () => {
   });
 
   it('owner 가 authorLogin 과 다르고 personalRepos 에 없으면 company 로 분류한다', () => {
-    const result = classifyRepoSource('schoolbell-e/sbe-api-v5', [], 'JSL107');
+    const result = classifyRepoSource('acme-corp/acme-api-v5', [], 'JSL107');
 
     expect(result).toBe('company');
   });

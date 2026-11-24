@@ -67,16 +67,16 @@ import { extractPrReference } from './extract-pr-reference';
 describe('extractPrReference', () => {
   it('문장 안의 full URL 을 추출한다', () => {
     const text =
-      '이 PR 회고해서 https://github.com/schoolbell-e/sbe-workspace/pull/1692 이력서에 녹여줘';
+      '이 PR 회고해서 https://github.com/acme-corp/acme-workspace/pull/1692 이력서에 녹여줘';
     expect(extractPrReference(text)).toEqual({
-      repo: 'schoolbell-e/sbe-workspace',
+      repo: 'acme-corp/acme-workspace',
       number: 1692,
     });
   });
 
   it('shorthand(owner/repo#123) 를 추출한다', () => {
-    expect(extractPrReference('schoolbell-e/sbe-workspace#42 회고')).toEqual({
-      repo: 'schoolbell-e/sbe-workspace',
+    expect(extractPrReference('acme-corp/acme-workspace#42 회고')).toEqual({
+      repo: 'acme-corp/acme-workspace',
       number: 42,
     });
   });
@@ -225,9 +225,9 @@ const VALID = JSON.stringify({
     techTags: ['NestJS', 'Notion API'],
     evidence: [
       {
-        repo: 'schoolbell-e/sbe-workspace',
+        repo: 'acme-corp/acme-workspace',
         pr: 1692,
-        url: 'https://github.com/schoolbell-e/sbe-workspace/pull/1692',
+        url: 'https://github.com/acme-corp/acme-workspace/pull/1692',
         mergedAt: '2026-06-30',
       },
     ],
@@ -1044,7 +1044,7 @@ git commit -m "docs(career-mate): REFLECT_PR spec + 구현 계획"
 
 - [ ] **Step 3: 수동 E2E 안내 (사용자 터미널)**
 
-`@이대리 https://github.com/schoolbell-e/sbe-workspace/pull/1692 이 PR 회고해서 이력서·포트폴리오에 녹여줘` 로 실제 실행 → 그 PR 단독 회고 + 이력서 bullet + Notion 포폴 링크가 나오는지 확인. (LLM/GitHub/Notion 실호출은 로컬 실행에서만 검증 가능.)
+`@이대리 https://github.com/acme-corp/acme-workspace/pull/1692 이 PR 회고해서 이력서·포트폴리오에 녹여줘` 로 실제 실행 → 그 PR 단독 회고 + 이력서 bullet + Notion 포폴 링크가 나오는지 확인. (LLM/GitHub/Notion 실호출은 로컬 실행에서만 검증 가능.)
 
 ---
 

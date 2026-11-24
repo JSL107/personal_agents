@@ -57,7 +57,7 @@ describe('toReadableMessage', () => {
   it('맨 GitHub 주소를 이름으로 접고 blocks 와 text 를 함께 낸다', () => {
     const result = toReadableMessage(
       [
-        '*판단 근거*: PR (https://github.com/schoolbell-e/sbe-api-v5/pull/52) 를 최우선으로 뒀다',
+        '*판단 근거*: PR (https://github.com/acme-corp/acme-api-v5/pull/52) 를 최우선으로 뒀다',
         '',
         '*오전*',
         '• 과제',
@@ -65,7 +65,7 @@ describe('toReadableMessage', () => {
     );
 
     expect(result.text).toContain(
-      '(<https://github.com/schoolbell-e/sbe-api-v5/pull/52|sbe-api-v5 #52>)',
+      '(<https://github.com/acme-corp/acme-api-v5/pull/52|acme-api-v5 #52>)',
     );
     expect(result.text).not.toContain('(https://github.com');
     expect(result.blocks).toBeDefined();

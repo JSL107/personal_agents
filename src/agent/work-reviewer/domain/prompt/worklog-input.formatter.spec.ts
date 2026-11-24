@@ -9,8 +9,8 @@ const makePullRequest = (
   number,
   title: `PR ${number}`,
   body: '',
-  repo: 'schoolbell-e/sbe-server',
-  url: `https://github.com/schoolbell-e/sbe-server/pull/${number}`,
+  repo: 'acme-corp/acme-server',
+  url: `https://github.com/acme-corp/acme-server/pull/${number}`,
   state: 'merged',
   mergedAt: '2026-08-11T04:00:00.000Z',
   updatedAt: '2026-08-11T04:00:00.000Z',
@@ -35,7 +35,7 @@ describe('buildWorklogInput', () => {
     expect(result).toContain('- 크롤 실패 대시보드 PR #52 기능·회귀 검증');
     expect(result).toContain('## 실적 (머지된 PR 1건)');
     expect(result).toContain(
-      '- schoolbell-e/sbe-server#971 급식 룰 저장 (+412/-88, 14파일, merged 2026-08-11)',
+      '- acme-corp/acme-server#971 급식 룰 저장 (+412/-88, 14파일, merged 2026-08-11)',
     );
   });
 
@@ -68,7 +68,7 @@ describe('buildWorklogInput', () => {
     expect(result).toContain(
       '- 계획만으로 회고하며, 완료·정량 근거를 단정하지 않는다.',
     );
-    expect(result).not.toContain('schoolbell-e/sbe-server#971');
+    expect(result).not.toContain('acme-corp/acme-server#971');
   });
 
   it('plan 파싱 결과가 비어 있으면 기존 fallback 의미를 보존한다', () => {
@@ -98,8 +98,8 @@ describe('buildWorklogInput', () => {
     });
 
     expect(result).toContain('## 실적 (머지된 PR 63건)');
-    expect(result).toContain('- schoolbell-e/sbe-server#60 PR 60');
-    expect(result).not.toContain('- schoolbell-e/sbe-server#61 PR 61');
+    expect(result).toContain('- acme-corp/acme-server#60 PR 60');
+    expect(result).not.toContain('- acme-corp/acme-server#61 PR 61');
     expect(result).toContain('- (이하 3건 생략)');
   });
 

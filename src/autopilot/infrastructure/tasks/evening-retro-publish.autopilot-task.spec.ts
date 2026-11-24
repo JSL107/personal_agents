@@ -34,7 +34,7 @@ const RETRO_RESPONSE = {
         keywords: ['k'],
         blogValueScore: 70,
         reason: '실제 PR 근거가 충분하다.',
-        sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+        sourceRefs: ['acme-corp/acme-api-v5#864'],
         outline: [
           '문제: PR 승인 전에는 정합성 문제가 드러나지 않았다.',
           '접근: user_to_group 동기화 경계를 보강했다.',
@@ -44,7 +44,7 @@ const RETRO_RESPONSE = {
     ],
     prNotes: [
       {
-        ref: 'schoolbell-e/sbe-api-v5#864',
+        ref: 'acme-corp/acme-api-v5#864',
         note: 'user_to_group 정합성 문제를 트랜잭션 경계로 보강',
       },
     ],
@@ -54,7 +54,7 @@ const RETRO_RESPONSE = {
 };
 
 const PR_ITEM = {
-  repo: 'schoolbell-e/sbe-api-v5',
+  repo: 'acme-corp/acme-api-v5',
   number: 864,
   url: 'https://x',
   title: 't',
@@ -291,7 +291,7 @@ describe('EveningRetroPublishTask', () => {
     expect(buildEveningSummary.execute).toHaveBeenCalledWith(
       expect.objectContaining({
         mergedPullRequestUrls: [
-          'https://github.com/schoolbell-e/sbe-api-v5/pull/864',
+          'https://github.com/acme-corp/acme-api-v5/pull/864',
         ],
       }),
     );
@@ -331,7 +331,7 @@ describe('EveningRetroPublishTask', () => {
     expect(result.previews).toBeUndefined();
   });
 
-  it('(c) PR 1건 있음 → previews.length === 2, 경력 payload.prGroups 에 schoolbell-e/sbe-api-v5#864 포함', async () => {
+  it('(c) PR 1건 있음 → previews.length === 2, 경력 payload.prGroups 에 acme-corp/acme-api-v5#864 포함', async () => {
     const { task } = makeTask({
       prs: [PR_ITEM],
       worklogRuns: [],
@@ -350,7 +350,7 @@ describe('EveningRetroPublishTask', () => {
     expect(careerPreview).toBeDefined();
     expect(
       (careerPreview?.payload as { prGroups: string[][] }).prGroups,
-    ).toEqual([['schoolbell-e/sbe-api-v5#864']]);
+    ).toEqual([['acme-corp/acme-api-v5#864']]);
   });
 
   it('(c-3) 회사 PR 과 개인 PR 이 섞인 날은 저장소별 묶음으로 갈라 담는다', async () => {
@@ -491,7 +491,7 @@ describe('EveningRetroPublishTask', () => {
 
     const routeInput = modelRouter.route.mock.calls[0][0];
     expect(routeInput.request.prompt).toContain(
-      '[회사 실무][schoolbell-e/sbe-api-v5#864]',
+      '[회사 실무][acme-corp/acme-api-v5#864]',
     );
     expect(routeInput.request.prompt).toContain(
       '[개인 프로젝트][JSL107/personal_agents#142]',
@@ -532,13 +532,13 @@ describe('EveningRetroPublishTask', () => {
     expect(result.detailText).toContain('실제 PR 근거가 충분하다.');
     // 카드는 첫 줄만으로 판단되게 점수·제목·근거만 싣고, 쓸 가치·개요는 싣지 않는다.
     expect(blogPreview?.previewText.split('\n')[0]).toContain(
-      '근거 회사 실무 sbe-api-v5#864',
+      '근거 회사 실무 acme-api-v5#864',
     );
     expect(blogPreview?.previewText).not.toContain('왜 쓸 가치');
     expect(blogPreview?.previewText).not.toContain('*초안 개요*');
     expect(blogPreview?.previewText.split('\n')).toHaveLength(2);
     expect(payload.topPick.reason).toBe('실제 PR 근거가 충분하다.');
-    expect(payload.topPick.sourceRefs).toEqual(['schoolbell-e/sbe-api-v5#864']);
+    expect(payload.topPick.sourceRefs).toEqual(['acme-corp/acme-api-v5#864']);
     expect(payload.topPick.outline).toEqual([
       '문제: PR 승인 전에는 정합성 문제가 드러나지 않았다.',
       '접근: user_to_group 동기화 경계를 보강했다.',
@@ -546,7 +546,7 @@ describe('EveningRetroPublishTask', () => {
     ]);
     expect(payload.sourcePrs).toEqual([
       {
-        repo: 'schoolbell-e/sbe-api-v5',
+        repo: 'acme-corp/acme-api-v5',
         number: 864,
         url: 'https://x',
         title: 't',
@@ -566,7 +566,7 @@ describe('EveningRetroPublishTask', () => {
             keywords: ['k'],
             blogValueScore: 70,
             reason: '실제 PR 근거가 충분하다.',
-            sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+            sourceRefs: ['acme-corp/acme-api-v5#864'],
             outline: [],
           },
         ],
@@ -586,7 +586,7 @@ describe('EveningRetroPublishTask', () => {
     );
 
     expect(blogPreview?.previewText).toBe(
-      '📝 *블로그 후보 70점* · 「T」 · 근거 회사 실무 sbe-api-v5#864\n✅ 누르면 이 PR 들로 본문을 써 Notion 초안으로 올립니다. GitHub 공개 발행은 따로 묻습니다.',
+      '📝 *블로그 후보 70점* · 「T」 · 근거 회사 실무 acme-api-v5#864\n✅ 누르면 이 PR 들로 본문을 써 Notion 초안으로 올립니다. GitHub 공개 발행은 따로 묻습니다.',
     );
     expect(blogPreview?.slackText).toBe(
       '📝 *블로그 발행할까요?*\n제목: T\n어디로: 노션 블로그\n왜: 실제 PR 근거가 충분하다.\n_승인하면 초안을 만들어 노션에 올려요._',
@@ -616,7 +616,7 @@ describe('EveningRetroPublishTask', () => {
     expect(careerPreview?.previewText).toContain('• 회사 실무:');
     // PR 줄은 재서술 메모가 아니라 제목 + 링크다(분석 보고 §4 3-1).
     expect(careerPreview?.previewText).toContain(
-      '  • <https://x|sbe-api-v5#864> t',
+      '  • <https://x|acme-api-v5#864> t',
     );
     expect(careerPreview?.previewText).not.toContain(
       'user_to_group 정합성 문제를 트랜잭션 경계로 보강',
@@ -632,7 +632,7 @@ describe('EveningRetroPublishTask', () => {
     // label·hint 만으로는 "왜 적어야 하는지"(코드에 안 남는다)가 전달되지 않는다.
     expect(careerPreview?.previewText).toContain('코드에는 남지 않는 정보');
     expect(careerPreview?.previewText).toContain('아래 칸에 적으면');
-    expect(careerPreview?.slackText).toContain('• sbe-api-v5: 1건');
+    expect(careerPreview?.slackText).toContain('• acme-api-v5: 1건');
     expect(careerPreview?.slackText).toContain('• personal_agents: 1건');
   });
 
@@ -647,7 +647,7 @@ describe('EveningRetroPublishTask', () => {
             keywords: ['k'],
             blogValueScore: 70,
             reason: '<!here> 근거',
-            sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+            sourceRefs: ['acme-corp/acme-api-v5#864'],
             outline: [],
           },
         ],
@@ -741,7 +741,7 @@ describe('EveningRetroPublishTask', () => {
 
     expect(result.detailText).toContain('개인 프로젝트(이대리)');
     expect(careerPreview?.previewText).toContain('• 회사 실무:');
-    expect(careerPreview?.previewText).toContain('|sbe-api-v5#864>');
+    expect(careerPreview?.previewText).toContain('|acme-api-v5#864>');
     expect(careerPreview?.previewText).toContain('• 개인 프로젝트(이대리):');
     expect(careerPreview?.previewText).toContain('|personal_agents#142>');
   });
@@ -830,7 +830,7 @@ describe('EveningRetroPublishTask', () => {
           keywords: ['k'],
           blogValueScore: score,
           reason: '이유',
-          sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+          sourceRefs: ['acme-corp/acme-api-v5#864'],
           outline: [],
         })),
         prNotes: [],
@@ -867,7 +867,7 @@ describe('EveningRetroPublishTask', () => {
             // 첫 문장 25자 + 뒤 세 문장 → 합계가 80자 상한을 넘겨 자르기가 걸린다.
             reason:
               '계획서를 실적으로 재서술하던 문제를 바로잡았다. 계획과 실적도 분리했다. 성과 평가의 신뢰성과 증거 설계를 함께 다뤄 블로그 가치가 높다. 자동화된 평가의 근거 설계를 설명할 수 있다.',
-            sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+            sourceRefs: ['acme-corp/acme-api-v5#864'],
             outline: [],
           },
         ],
@@ -905,7 +905,7 @@ describe('EveningRetroPublishTask', () => {
             keywords: [],
             blogValueScore: 90,
             reason: '짧은 이유',
-            sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+            sourceRefs: ['acme-corp/acme-api-v5#864'],
             outline: [],
           },
         ],

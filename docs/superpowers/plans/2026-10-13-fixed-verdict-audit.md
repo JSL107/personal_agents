@@ -34,11 +34,11 @@ FIXED 를 쓰는 경로는 하나뿐이다(`src/pr-review-loop/application/harve
 | 레포 | FIXED | 표본 |
 |---|---:|---:|
 | JSL107/personal_agents | 108 | 8 |
-| schoolbell-e/sbe-api-v5 | 23 | 5 |
-| schoolbell-e/sbe-spinoff-workspace | 23 | 5 |
-| schoolbell-e/sbe-api-v5-puppeteer | 12 | 2 |
+| acme-corp/acme-api-v5 | 23 | 5 |
+| acme-corp/acme-spinoff-workspace | 23 | 5 |
+| acme-corp/acme-api-v5-puppeteer | 12 | 2 |
 | DDD-Community/DDD_BE | 8 | 3 |
-| schoolbell-e/sbe-api-v4 | 6 | 2 |
+| acme-corp/acme-api-v4 | 6 | 2 |
 | **합계** | **180** | **25** |
 
 **뽑는 법**: 레포 × 카테고리 23칸에서 칸마다 1건, 그리고 비중이 가장 큰 personal_agents
@@ -100,20 +100,20 @@ personal_agents 는 108건 중 8건(7%)을 봤지만 DDD_BE 는 8건 중 3건(38
 | 300 | personal_agents#320 | RELIABILITY | 비공개 초안을 공개 경로로 재조회하고 slug 비교도 안 한다 | `16944bf` | `publish-portfolio-site.usecase.ts:79` — 인증 경로 `listProjects()` 로 재조회해 기대 slug 와 대조(`verifyPublished`) | 맞게 고쳐짐 |
 | 323 | personal_agents#331 | SECURITY | 원제목이 마스킹 없이 미리보기에 실린다 | `8bcd67c` | `publish-notion-draft.usecase.ts:458` — `maskForbidden(draft.title, …)` 적용 | 맞게 고쳐짐 |
 | 398 | personal_agents#352 | TEST | `slackUserId: ''` 분기 테스트가 없다 | `be86794` | `agent-run.prisma.repository.spec.ts:88` 근처에 빈 문자열 JSON 경로 매칭 테스트 추가 | 맞게 고쳐짐 |
-| 702 | sbe-api-v4#281 | CORRECTNESS | `date("Y") + 1` 로 1~2월에도 다음 해 기준일이 된다 | `62d2e1f` | `CloudStorage.php:91` — 3월 전이면 올해, 이후면 내년으로 학년도를 가름 + 테스트 | 맞게 고쳐짐 |
-| 158 | sbe-api-v4#261 | TEST | 롤백 테스트가 비엄격 sql_mode 에 좌우된다 | `e6d9c66` | `CurrentCreditDeltaTest.php:143` — 세션에서 `STRICT_ALL_TABLES` 를 켜고 `finally` 에서 복원 | 맞게 고쳐짐 |
-| 301 | sbe-api-v5#990 | CORRECTNESS | 가구 키가 멤버 타입을 보지 않아 비보호자가 합쳐진다 | `8405ed3` | `LetterPostModel.ts:132` — 보호자(Parent1·2)일 때만 `student_member_id` 사용 | 맞게 고쳐짐 |
-| 383 | sbe-api-v5#1011 | READABILITY | 주석이 바뀐 mock 스키마(DEFAULT NULL)와 어긋난다 | `ad07690` | `DeviceController.spec.ts:136` — 주석을 「이 PR 이전의 mock 은 … 같은 PR 에서 맞췄다」로 정정 | 맞게 고쳐짐 |
-| 344 | sbe-api-v5#1006 | RELIABILITY | 조회로 읽은 placement 와 UPDATE 사이 TOCTOU | `466d3c6` | `StaffBannerController.ts:157` — 조회로 placement 를 알아낸 경우 UPDATE 조건에 그 값을 고정(CAS) | 맞게 고쳐짐 ※관찰 ② |
-| 748 | sbe-api-v5#1081 | SECURITY | 활성 uid·이름·실제 device_token 이 남아 있다 | `4e71875` | `call-ios.ts:12` 근처 — uid 를 더미(`0:100001`)로, token 을 `TEST_APNS_TOKEN` 환경변수로 교체했으나 이름(`김교사`)은 남김 | 다른 걸 고침 ※관찰 ③ |
-| 339 | sbe-api-v5#1005 | TEST | priority 0 행을 priority 없이 로고로 전환하는 테스트가 없다 | `7bf5ecd` | `StaffBannerController.spec.ts:217` 근처 — 「priority 0 인 행을 … 전환하면 400」 테스트 추가 | 맞게 고쳐짐 |
-| 524 | sbe-api-v5-puppeteer#121 | CORRECTNESS | 경고창 내용을 안 보고 모두 비공개로 분류 | `c313d9a` | `unreadable-row.fn.ts:50` — `/비공개\|비밀\s*글/` 문구일 때만 잠김, 삭제는 404·410 만 | 맞게 고쳐짐 |
-| 513 | sbe-api-v5-puppeteer#117 | RELIABILITY | 마지막 팝업만 닫아 중간 팝업이 남는다 | `fb64019` | `Crawl.ts:188` — 사전 액션이 연 팝업을 모두 모아 `closePopupPages` 로 닫음 | 맞게 고쳐짐 |
-| 1183 | sbe-spinoff-workspace#2917 | CORRECTNESS | 14a·14a-2 설명이 「staging 배포 완료」와 양립하지 않는다 | `8a7fd05` | 로드맵 `:87-88` — 「적용하면 부팅에 실패한다」·「로더 코드가 없다」를 배포 완료·로더 위치 서술로 교체 | 맞게 고쳐짐 |
-| 942 | sbe-spinoff-workspace#2830 | READABILITY | 후속 범위인 OIDC·GCS 패키지가 런타임 의존성에 있다 | `16baeee` | `api/package.json:14` — `oidc-rp-bff`·`@google-cloud/storage` 등 6개 제거 | 맞게 고쳐짐 |
-| 1184 | sbe-spinoff-workspace#2921 | RELIABILITY | 대상·제외자 해석 예외가 실패 계약을 우회한다 | `5c66f62` | `conduct-notifications.service.ts:64` — 대상 해석을 `try` 로 감싸 실패를 결과로 반환, 제외자 조회는 `excludeUserIds` 직접 전달로 없앰 | 맞게 고쳐짐 |
-| 1587 | sbe-spinoff-workspace#3922 | SECURITY | COMMIT 실패 시 업로드된 CSV 가 남는다 | `0c0b267` | `exports.service.ts:99` — 트랜잭션·업로드를 정리 `try` 안으로 옮겨 어느 단계 실패든 삭제 | 맞게 고쳐짐 |
-| 1505 | sbe-spinoff-workspace#3754 | TEST | REDUCTION·CANCEL·CORRECT·SCOPE_MISSING 이 테스트되지 않는다 | `be8d924` | `migration-constraints.integration.spec.ts:434` 근처 — 종류 5개·결과 4개 `it.each` 추가 | 맞게 고쳐짐 |
+| 702 | acme-api-v4#281 | CORRECTNESS | `date("Y") + 1` 로 1~2월에도 다음 해 기준일이 된다 | `62d2e1f` | `CloudStorage.php:91` — 3월 전이면 올해, 이후면 내년으로 학년도를 가름 + 테스트 | 맞게 고쳐짐 |
+| 158 | acme-api-v4#261 | TEST | 롤백 테스트가 비엄격 sql_mode 에 좌우된다 | `e6d9c66` | `CurrentCreditDeltaTest.php:143` — 세션에서 `STRICT_ALL_TABLES` 를 켜고 `finally` 에서 복원 | 맞게 고쳐짐 |
+| 301 | acme-api-v5#990 | CORRECTNESS | 가구 키가 멤버 타입을 보지 않아 비보호자가 합쳐진다 | `8405ed3` | `LetterPostModel.ts:132` — 보호자(Parent1·2)일 때만 `student_member_id` 사용 | 맞게 고쳐짐 |
+| 383 | acme-api-v5#1011 | READABILITY | 주석이 바뀐 mock 스키마(DEFAULT NULL)와 어긋난다 | `ad07690` | `DeviceController.spec.ts:136` — 주석을 「이 PR 이전의 mock 은 … 같은 PR 에서 맞췄다」로 정정 | 맞게 고쳐짐 |
+| 344 | acme-api-v5#1006 | RELIABILITY | 조회로 읽은 placement 와 UPDATE 사이 TOCTOU | `466d3c6` | `StaffBannerController.ts:157` — 조회로 placement 를 알아낸 경우 UPDATE 조건에 그 값을 고정(CAS) | 맞게 고쳐짐 ※관찰 ② |
+| 748 | acme-api-v5#1081 | SECURITY | 활성 uid·이름·실제 device_token 이 남아 있다 | `4e71875` | `call-ios.ts:12` 근처 — uid 를 더미(`0:100001`)로, token 을 `TEST_APNS_TOKEN` 환경변수로 교체했으나 이름(`김교사`)은 남김 | 다른 걸 고침 ※관찰 ③ |
+| 339 | acme-api-v5#1005 | TEST | priority 0 행을 priority 없이 로고로 전환하는 테스트가 없다 | `7bf5ecd` | `StaffBannerController.spec.ts:217` 근처 — 「priority 0 인 행을 … 전환하면 400」 테스트 추가 | 맞게 고쳐짐 |
+| 524 | acme-api-v5-puppeteer#121 | CORRECTNESS | 경고창 내용을 안 보고 모두 비공개로 분류 | `c313d9a` | `unreadable-row.fn.ts:50` — `/비공개\|비밀\s*글/` 문구일 때만 잠김, 삭제는 404·410 만 | 맞게 고쳐짐 |
+| 513 | acme-api-v5-puppeteer#117 | RELIABILITY | 마지막 팝업만 닫아 중간 팝업이 남는다 | `fb64019` | `Crawl.ts:188` — 사전 액션이 연 팝업을 모두 모아 `closePopupPages` 로 닫음 | 맞게 고쳐짐 |
+| 1183 | acme-spinoff-workspace#2917 | CORRECTNESS | 14a·14a-2 설명이 「staging 배포 완료」와 양립하지 않는다 | `8a7fd05` | 로드맵 `:87-88` — 「적용하면 부팅에 실패한다」·「로더 코드가 없다」를 배포 완료·로더 위치 서술로 교체 | 맞게 고쳐짐 |
+| 942 | acme-spinoff-workspace#2830 | READABILITY | 후속 범위인 OIDC·GCS 패키지가 런타임 의존성에 있다 | `16baeee` | `api/package.json:14` — `oidc-rp-bff`·`@google-cloud/storage` 등 6개 제거 | 맞게 고쳐짐 |
+| 1184 | acme-spinoff-workspace#2921 | RELIABILITY | 대상·제외자 해석 예외가 실패 계약을 우회한다 | `5c66f62` | `conduct-notifications.service.ts:64` — 대상 해석을 `try` 로 감싸 실패를 결과로 반환, 제외자 조회는 `excludeUserIds` 직접 전달로 없앰 | 맞게 고쳐짐 |
+| 1587 | acme-spinoff-workspace#3922 | SECURITY | COMMIT 실패 시 업로드된 CSV 가 남는다 | `0c0b267` | `exports.service.ts:99` — 트랜잭션·업로드를 정리 `try` 안으로 옮겨 어느 단계 실패든 삭제 | 맞게 고쳐짐 |
+| 1505 | acme-spinoff-workspace#3754 | TEST | REDUCTION·CANCEL·CORRECT·SCOPE_MISSING 이 테스트되지 않는다 | `be8d924` | `migration-constraints.integration.spec.ts:434` 근처 — 종류 5개·결과 4개 `it.each` 추가 | 맞게 고쳐짐 |
 
 ## 4. 관찰
 

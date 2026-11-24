@@ -18,11 +18,11 @@
 |---|---|---|---|
 | personal_agents | 602 | 같은 폴더 `X.spec.ts` | 99% |
 | DDD_BE | 71 | 같은 폴더, 일부 `X.<주제>.spec.ts` | 97% |
-| sbe-api-v5 | 302 | 같은 폴더, 한 소스에 spec 최대 14개 | 93% |
-| sbe-api-v5-puppeteer | 128 | 같은 폴더 | 95% |
-| sbe-survey-v5 | 210 | 같은 폴더 | 95% |
-| sbe-spinoff-workspace | 1,207 | 같은 폴더 + `test/*.int.spec.ts` 179개(1:1 짝 없음) | 81% |
-| sbe-api-v4 (PHP) | 237 | `app/tests/src/**/X*Test.php`, 기능 이름으로 쪼갬 | 81% |
+| acme-api-v5 | 302 | 같은 폴더, 한 소스에 spec 최대 14개 | 93% |
+| acme-api-v5-puppeteer | 128 | 같은 폴더 | 95% |
+| acme-survey-v5 | 210 | 같은 폴더 | 95% |
+| acme-spinoff-workspace | 1,207 | 같은 폴더 + `test/*.int.spec.ts` 179개(1:1 짝 없음) | 81% |
+| acme-api-v4 (PHP) | 237 | `app/tests/src/**/X*Test.php`, 기능 이름으로 쪼갬 | 81% |
 
 비율은 최종 구현(`mapTestsToSources`)을 같은 트리에 돌린 값이다. `__tests__/` 는 7곳 모두 0건이었다. 레포별 규칙표 대신 규칙
 하나로 전 레포에 적용한다. JS/TS 는 같은 폴더의 `X.spec|test.ext` 와 `X.<무엇이든>.spec|test.ext`, PHP 는 `tests/` 아래

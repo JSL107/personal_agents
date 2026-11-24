@@ -29,7 +29,7 @@
   3. **Notion 포트폴리오 항목** — 포폴 페이지에 append.
 - 라우팅이 이 요청을 PO_EVAL이 아니라 `CAREER_MATE.REFLECT_PR`로 보낸다.
 
-성공 판정: 실제 PR(예: `schoolbell-e/sbe-workspace#1692`)을 대상으로 실행 시, 그 PR 단독 회고 + 이력서 bullet + 포폴 링크가 나오고, `pnpm lint:check && pnpm test && pnpm build` 3중 green.
+성공 판정: 실제 PR(예: `acme-corp/acme-workspace#1692`)을 대상으로 실행 시, 그 PR 단독 회고 + 이력서 bullet + 포폴 링크가 나오고, `pnpm lint:check && pnpm test && pnpm build` 3중 green.
 
 ## 3. 비목표 (Scope 밖)
 
@@ -41,7 +41,7 @@
 ## 4. 사용자 시나리오
 
 ```
-@이대리 https://github.com/schoolbell-e/sbe-workspace/pull/1692
+@이대리 https://github.com/acme-corp/acme-workspace/pull/1692
 이 PR 프로젝트 회고하고 이력서·포트폴리오에 녹여줘
 ```
 → 1차 분류 `CAREER_MATE` → 2차 분류 `REFLECT_PR` → PR fetch → 회고 합성 → 프로필 편입 → 윤문 → 저장 → 포폴 append → Slack 응답(회고 서술 + 이력서 bullet + 포폴 링크).
@@ -149,7 +149,7 @@ interface ReflectPrResult {
 - 단위: `reflect-pr.usecase.spec.ts` (mock github/notion/repo/modelRouter로 fetch→합성→dedup 편입→포폴 append 흐름), 프롬프트 parser spec, `extract-pr-reference.spec.ts` (URL/shorthand/문장-내/미검출).
 - 라우팅: 1차/2차 프롬프트 spec에 "PR+회고+이력서" → CAREER_MATE/REFLECT_PR, "PR 리뷰해줘" → CODE_REVIEWER 유지 케이스.
 - 게이트: `pnpm lint:check && pnpm test && pnpm build` 3중 green.
-- E2E(수동): `sbe-workspace#1692`로 실제 실행 — 사용자 터미널.
+- E2E(수동): `acme-workspace#1692`로 실제 실행 — 사용자 터미널.
 
 ## 15. AGENTS.md §4 체크리스트 적용 여부
 - 신규 **에이전트가 아니라 기존 CAREER_MATE 내부 액션**이므로 13개 중 다수 해당 없음.
