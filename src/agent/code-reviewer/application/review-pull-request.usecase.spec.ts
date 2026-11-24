@@ -1729,7 +1729,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
       number: 1,
       title: 'feat: 결제 PG 연동',
       body: '',
-      repo: 'schoolbell-e/sbe-api-v5',
+      repo: 'acme-corp/acme-api-v5',
       url: 'u',
       baseRef: 'main',
       baseSha: 'base-sha-main',
@@ -1747,7 +1747,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
     });
 
     await buildUsecase(deps).execute({
-      prRef: 'schoolbell-e/sbe-api-v5#1',
+      prRef: 'acme-corp/acme-api-v5#1',
       slackUserId: 'U1',
     });
 

@@ -5,15 +5,15 @@ import { extractPrReferences } from './extract-pr-reference';
 describe('extractPrReferences', () => {
   it('단일 full URL 을 1건 배열로 추출한다 (하위호환)', () => {
     const text =
-      '이 PR 회고 https://github.com/schoolbell-e/sbe-workspace/pull/1692 이력서에';
+      '이 PR 회고 https://github.com/acme-corp/acme-workspace/pull/1692 이력서에';
     expect(extractPrReferences(text)).toEqual([
-      { repo: 'schoolbell-e/sbe-workspace', number: 1692 },
+      { repo: 'acme-corp/acme-workspace', number: 1692 },
     ]);
   });
 
   it('shorthand(owner/repo#123) 를 추출한다', () => {
-    expect(extractPrReferences('schoolbell-e/sbe-workspace#42 회고')).toEqual([
-      { repo: 'schoolbell-e/sbe-workspace', number: 42 },
+    expect(extractPrReferences('acme-corp/acme-workspace#42 회고')).toEqual([
+      { repo: 'acme-corp/acme-workspace', number: 42 },
     ]);
   });
 

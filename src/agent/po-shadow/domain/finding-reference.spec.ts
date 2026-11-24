@@ -10,18 +10,18 @@ const finding = (factIds: string[]) => ({
 describe('buildFindingReferences', () => {
   const facts: PlanRealityFact[] = [
     {
-      id: 'unplanned:schoolbell-e/sbe-conduct-api#3922',
+      id: 'unplanned:acme-corp/acme-conduct-api#3922',
       kind: 'UNPLANNED_ASSIGNED',
       label: '학교 관리자용 항목 추가',
       detail: '계획에 없는 담당 항목',
-      url: 'https://github.com/schoolbell-e/sbe-conduct-api/pull/3922',
+      url: 'https://github.com/acme-corp/acme-conduct-api/pull/3922',
     },
     {
-      id: 'finding-unmoved:schoolbell-e/sbe-api-v5-puppeteer#153',
+      id: 'finding-unmoved:acme-corp/acme-api-v5-puppeteer#153',
       kind: 'FINDING_UNMOVED',
-      label: 'sbe-api-v5-puppeteer#153',
+      label: 'acme-api-v5-puppeteer#153',
       detail: '28일째 미이동',
-      url: 'https://github.com/schoolbell-e/sbe-api-v5-puppeteer/pull/153',
+      url: 'https://github.com/acme-corp/acme-api-v5-puppeteer/pull/153',
     },
     {
       id: 'failed:CODE_REVIEWER:2026-10-13T00:00:00.000Z',
@@ -33,44 +33,44 @@ describe('buildFindingReferences', () => {
 
   it('GitHub 사실은 저장소#번호 + 원래 제목 + 링크로 만든다', () => {
     const [references] = buildFindingReferences(
-      [finding(['unplanned:schoolbell-e/sbe-conduct-api#3922'])],
+      [finding(['unplanned:acme-corp/acme-conduct-api#3922'])],
       facts,
       new Map(),
     );
     expect(references).toEqual([
       {
-        text: 'sbe-conduct-api#3922 학교 관리자용 항목 추가',
-        url: 'https://github.com/schoolbell-e/sbe-conduct-api/pull/3922',
+        text: 'acme-conduct-api#3922 학교 관리자용 항목 추가',
+        url: 'https://github.com/acme-corp/acme-conduct-api/pull/3922',
       },
     ]);
   });
 
   it('제목 없는 지난 지적 사실은 이번 회차 조회 결과에서 제목을 찾고, 없으면 번호만 쓴다', () => {
-    const key = 'schoolbell-e/sbe-api-v5-puppeteer#153';
+    const key = 'acme-corp/acme-api-v5-puppeteer#153';
     const [found] = buildFindingReferences(
       [finding([`finding-unmoved:${key}`])],
       facts,
       new Map([[key, '정합성 검증']]),
     );
-    expect(found[0].text).toBe('sbe-api-v5-puppeteer#153 정합성 검증');
+    expect(found[0].text).toBe('acme-api-v5-puppeteer#153 정합성 검증');
 
     const [missing] = buildFindingReferences(
       [finding([`finding-unmoved:${key}`])],
       facts,
       new Map(),
     );
-    expect(missing[0].text).toBe('sbe-api-v5-puppeteer#153');
+    expect(missing[0].text).toBe('acme-api-v5-puppeteer#153');
   });
 
   it('조회된 원래 제목이 있으면 잘린 label 보다 먼저 쓴다', () => {
-    const key = 'schoolbell-e/sbe-conduct-api#3922';
+    const key = 'acme-corp/acme-conduct-api#3922';
     const [references] = buildFindingReferences(
       [finding([`unplanned:${key}`])],
       [{ ...facts[0], label: '학교 관리자용 항목 추…' }],
       new Map([[key, '학교 관리자용 항목 추가와 권한 정리']]),
     );
     expect(references[0].text).toBe(
-      'sbe-conduct-api#3922 학교 관리자용 항목 추가와 권한 정리',
+      'acme-conduct-api#3922 학교 관리자용 항목 추가와 권한 정리',
     );
   });
 
@@ -78,26 +78,26 @@ describe('buildFindingReferences', () => {
     const [references] = buildFindingReferences(
       [
         finding([
-          'stalled:schoolbell-e/sbe-api-v5-puppeteer#153',
-          'finding-unmoved:schoolbell-e/sbe-api-v5-puppeteer#153',
+          'stalled:acme-corp/acme-api-v5-puppeteer#153',
+          'finding-unmoved:acme-corp/acme-api-v5-puppeteer#153',
         ]),
       ],
       [
         ...facts,
         {
-          id: 'stalled:schoolbell-e/sbe-api-v5-puppeteer#153',
+          id: 'stalled:acme-corp/acme-api-v5-puppeteer#153',
           kind: 'PLANNED_STALLED',
           label: '정합성 검증',
           detail: '리뷰 0건',
-          url: 'https://github.com/schoolbell-e/sbe-api-v5-puppeteer/pull/153',
+          url: 'https://github.com/acme-corp/acme-api-v5-puppeteer/pull/153',
         } as PlanRealityFact,
       ],
       new Map(),
     );
     expect(references).toEqual([
       {
-        text: 'sbe-api-v5-puppeteer#153 정합성 검증',
-        url: 'https://github.com/schoolbell-e/sbe-api-v5-puppeteer/pull/153',
+        text: 'acme-api-v5-puppeteer#153 정합성 검증',
+        url: 'https://github.com/acme-corp/acme-api-v5-puppeteer/pull/153',
       },
     ]);
   });

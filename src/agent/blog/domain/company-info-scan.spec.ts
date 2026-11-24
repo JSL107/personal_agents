@@ -3,27 +3,27 @@ import { scanForbiddenTerms } from './company-info-scan';
 describe('scanForbiddenTerms', () => {
   it('설정 금지어를 대소문자와 무관하게 태그에서도 찾는다', () => {
     const hits = scanForbiddenTerms(
-      { body: '기술 맥락은 유지한다.', tags: ['SchoolBell'] },
-      ['schoolbell'],
+      { body: '기술 맥락은 유지한다.', tags: ['acme'] },
+      ['acme'],
     );
 
     expect(hits).toEqual([
-      expect.objectContaining({ term: 'schoolbell', kind: 'term' }),
+      expect.objectContaining({ term: 'acme', kind: 'term' }),
     ]);
   });
 
   it('사내 버전 코드네임이 남은 문장을 차단한다', () => {
     const hits = scanForbiddenTerms(
       {
-        body: '학교종이 백엔드는 레거시 v4(PHP)와 신규 서비스를 함께 운영했다.',
+        body: '예시회사 백엔드는 레거시 v4(PHP)와 신규 서비스를 함께 운영했다.',
         tags: [],
       },
-      ['학교종이'],
+      ['예시회사'],
     );
 
     expect(hits).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ term: '학교종이', kind: 'term' }),
+        expect.objectContaining({ term: '예시회사', kind: 'term' }),
         expect.objectContaining({ term: 'v4', kind: 'pattern' }),
       ]),
     );
@@ -86,7 +86,7 @@ describe('scanForbiddenTerms', () => {
         body: '레거시 PHP와 신규 Node 서비스가 공유 DB를 쓸 때 멱등성 키를 기준으로 정합성을 지켰다.',
         tags: ['migration', 'idempotency'],
       },
-      ['schoolbell'],
+      ['acme'],
     );
 
     expect(hits).toEqual([]);

@@ -401,7 +401,7 @@ describe('formatPrReviewSweep', () => {
   it('학습 레포가 여럿이면 레포마다 따로 내고 합산하지 않는다', () => {
     // 합산하면 표본이 큰 레포가 작은 레포의 변화를 덮는다 — 학습을 새로 연 레포의 효과가
     // 바로 그 작은 쪽이다. 레포마다 자기 구간 줄이 붙어야 어느 수치가 어느 레포인지 읽힌다.
-    const spinoff = 'schoolbell-e/sbe-spinoff-workspace';
+    const spinoff = 'acme-corp/acme-spinoff-workspace';
     const text = formatPrReviewSweep({
       harvest: harvest({
         acked: 1,

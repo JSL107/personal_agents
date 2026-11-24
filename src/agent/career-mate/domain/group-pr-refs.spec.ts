@@ -11,15 +11,15 @@ const pr = (
 describe('groupPrRefsByRepo', () => {
   it('회사 저장소와 개인 저장소를 서로 다른 그룹으로 가른다', () => {
     const { groups } = groupPrRefsByRepo([
-      pr('schoolbell-e/sbe-api-v5', 10),
+      pr('acme-corp/acme-api-v5', 10),
       pr('JSL107/personal_agents', 400),
-      pr('schoolbell-e/sbe-api-v5', 11),
+      pr('acme-corp/acme-api-v5', 11),
     ]);
 
     expect(groups).toEqual([
       {
-        repo: 'schoolbell-e/sbe-api-v5',
-        refs: ['schoolbell-e/sbe-api-v5#10', 'schoolbell-e/sbe-api-v5#11'],
+        repo: 'acme-corp/acme-api-v5',
+        refs: ['acme-corp/acme-api-v5#10', 'acme-corp/acme-api-v5#11'],
       },
       { repo: 'JSL107/personal_agents', refs: ['JSL107/personal_agents#400'] },
     ]);
@@ -27,23 +27,23 @@ describe('groupPrRefsByRepo', () => {
 
   it('같은 소유자라도 저장소가 다르면 나눈다 (다른 시스템이므로)', () => {
     const { groups } = groupPrRefsByRepo([
-      pr('schoolbell-e/sbe-api-v5', 1),
-      pr('schoolbell-e/sbe-slack-bot', 2),
+      pr('acme-corp/acme-api-v5', 1),
+      pr('acme-corp/acme-slack-bot', 2),
     ]);
 
     expect(groups.map((group) => group.repo)).toEqual([
-      'schoolbell-e/sbe-api-v5',
-      'schoolbell-e/sbe-slack-bot',
+      'acme-corp/acme-api-v5',
+      'acme-corp/acme-slack-bot',
     ]);
   });
 
   it('같은 PR 이 두 번 들어와도 한 번만 담는다', () => {
     const { groups } = groupPrRefsByRepo([
-      pr('schoolbell-e/sbe-api-v5', 7),
-      pr('schoolbell-e/sbe-api-v5', 7),
+      pr('acme-corp/acme-api-v5', 7),
+      pr('acme-corp/acme-api-v5', 7),
     ]);
 
-    expect(groups[0].refs).toEqual(['schoolbell-e/sbe-api-v5#7']);
+    expect(groups[0].refs).toEqual(['acme-corp/acme-api-v5#7']);
   });
 
   it('PR 이 많은 그룹을 앞에 두고, 같은 수면 저장소 이름 순으로 고정한다', () => {

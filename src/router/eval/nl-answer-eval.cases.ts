@@ -52,7 +52,7 @@ const MORNING_NEWS_BODY = [
 
 const MENTION = '<@U0AULUXLF9B> ';
 const PR_282 =
-  '<https://github.com/schoolbell-e/sbe-survey-v5/pull/282|github.com/schoolbell-e/sbe-survey-v5/pull/282>';
+  '<https://github.com/acme-corp/acme-survey-v5/pull/282|github.com/acme-corp/acme-survey-v5/pull/282>';
 const PR_282_REVIEW = `*PR 리뷰 — ${MENTION}${PR_282} 이거 리뷰 가능?* 위험도: :red_circle: HIGH · 권고: :hand: Request changes  *요약* PR #282는 설문 삭제 트리거를 등록하고 Storage·RTDB·expire 데이터를 정리하도록 확장한다.`;
 const VACATION_BALANCE_7479 =
   '*:beach_with_umbrella: 휴가 잔여*  *현재 회기*: 2026-04-06 ~ 2027-04-05 • 부여: 6일 • 사용: 4일 • 잔여: 2일  _이대리 (VACATION) · agentRunId=7479_';
@@ -298,7 +298,7 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
       destinations: [AgentType.CODE_REVIEWER],
       mustIntercept: {
         name: 'ReviewPullRequestUsecase',
-        argsInclude: { repo: 'schoolbell-e/sbe-survey-v5', number: 282 },
+        argsInclude: { repo: 'acme-corp/acme-survey-v5', number: 282 },
       },
     },
   },
@@ -572,7 +572,7 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
     expect: {
       mustIntercept: {
         name: 'ReviewPullRequestUsecase',
-        argsInclude: { repo: 'schoolbell-e/sbe-survey-v5', number: 282 },
+        argsInclude: { repo: 'acme-corp/acme-survey-v5', number: 282 },
       },
     },
   },
@@ -592,7 +592,7 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
     expect: {
       mustIntercept: {
         name: 'ReviewPullRequestUsecase',
-        argsInclude: { repo: 'schoolbell-e/sbe-survey-v5', number: 282 },
+        argsInclude: { repo: 'acme-corp/acme-survey-v5', number: 282 },
       },
     },
   },

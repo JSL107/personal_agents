@@ -40,7 +40,7 @@ describe('EveningCareerReflectApplier', () => {
     await applier.apply(
       makePreview({
         prGroups: [
-          ['schoolbell-e/sbe-api-v5#10', 'schoolbell-e/sbe-api-v5#11'],
+          ['acme-corp/acme-api-v5#10', 'acme-corp/acme-api-v5#11'],
           ['JSL107/personal_agents#400'],
         ],
         slackUserId: 'U1',
@@ -51,7 +51,7 @@ describe('EveningCareerReflectApplier', () => {
     expect(reflectPr.execute).toHaveBeenNthCalledWith(1, {
       triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
       slackUserId: 'U1',
-      prText: 'schoolbell-e/sbe-api-v5#10\nschoolbell-e/sbe-api-v5#11',
+      prText: 'acme-corp/acme-api-v5#10\nacme-corp/acme-api-v5#11',
       portfolioSync: 'skip',
     });
     expect(reflectPr.execute).toHaveBeenNthCalledWith(2, {

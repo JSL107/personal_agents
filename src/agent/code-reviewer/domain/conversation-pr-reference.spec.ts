@@ -16,16 +16,16 @@ const turn = (
 });
 
 const PR_282_LINK =
-  '<https://github.com/schoolbell-e/sbe-survey-v5/pull/282|github.com/schoolbell-e/sbe-survey-v5/pull/282>';
+  '<https://github.com/acme-corp/acme-survey-v5/pull/282|github.com/acme-corp/acme-survey-v5/pull/282>';
 
 describe('findPrReferences', () => {
   it('URL·shorthand·Slack 링크를 나온 순서대로, 같은 PR 은 한 번만 찾는다', () => {
     expect(
       findPrReferences(
-        `${PR_282_LINK} 랑 JSL107/personal_agents#741, 다시 schoolbell-e/sbe-survey-v5#282`,
+        `${PR_282_LINK} 랑 JSL107/personal_agents#741, 다시 acme-corp/acme-survey-v5#282`,
       ),
     ).toEqual([
-      { repo: 'schoolbell-e/sbe-survey-v5', number: 282 },
+      { repo: 'acme-corp/acme-survey-v5', number: 282 },
       { repo: 'JSL107/personal_agents', number: 741 },
     ]);
   });
@@ -62,7 +62,7 @@ describe('resolvePrReferenceFromConversation', () => {
           AgentType.CODE_REVIEWER,
         ),
       ]),
-    ).toEqual({ kind: 'INHERITED', prRef: 'schoolbell-e/sbe-survey-v5#282' });
+    ).toEqual({ kind: 'INHERITED', prRef: 'acme-corp/acme-survey-v5#282' });
   });
 
   it('실패한 턴(agentType null)이 끼어 있어도 앞선 리뷰 턴에서 잇는다', () => {
@@ -71,7 +71,7 @@ describe('resolvePrReferenceFromConversation', () => {
         turn('user', `${PR_282_LINK} 이거 리뷰 가능?`, AgentType.CODE_REVIEWER),
         turn('user', '게시까지 진행해줘.', null),
       ]),
-    ).toEqual({ kind: 'INHERITED', prRef: 'schoolbell-e/sbe-survey-v5#282' });
+    ).toEqual({ kind: 'INHERITED', prRef: 'acme-corp/acme-survey-v5#282' });
   });
 
   it('다른 워커 턴의 PR 은 쓰지 않는다 — 게시 기본값이 켜져 있어 엉뚱한 PR 에 코멘트가 달린다', () => {
@@ -99,7 +99,7 @@ describe('resolvePrReferenceFromConversation', () => {
     ).toEqual({
       kind: 'AMBIGUOUS',
       candidates: [
-        'schoolbell-e/sbe-survey-v5#282',
+        'acme-corp/acme-survey-v5#282',
         'JSL107/personal_agents#741',
       ],
     });

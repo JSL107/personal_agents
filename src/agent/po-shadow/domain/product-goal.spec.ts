@@ -21,7 +21,7 @@ const draft = (
   kind: 'TASK',
   title: '보존기간 파일 파기',
   why: null,
-  successCriterion: 'sbe-api-v5 운영 배포 완료',
+  successCriterion: 'acme-api-v5 운영 배포 완료',
   keywords: ['보존기간', '파기'],
   dueDate: null,
   ...overrides,
@@ -44,7 +44,7 @@ describe('parseProductGoalCommand', () => {
   it('선언에서 제목·달성 기준·기한을 가른다', () => {
     expect(
       parseProductGoalCommand(
-        '<@U0> 이번 분기 목표는 보존기간 파일 파기, 달성 기준은 sbe-api-v5 운영 배포 완료, 기한 12월 31일',
+        '<@U0> 이번 분기 목표는 보존기간 파일 파기, 달성 기준은 acme-api-v5 운영 배포 완료, 기한 12월 31일',
         today,
       ),
     ).toEqual({
@@ -53,7 +53,7 @@ describe('parseProductGoalCommand', () => {
         kind: 'TASK',
         title: '보존기간 파일 파기',
         why: null,
-        successCriterion: 'sbe-api-v5 운영 배포 완료',
+        successCriterion: 'acme-api-v5 운영 배포 완료',
         // 키워드를 안 주면 제목 낱말로 채운다. 어디에나 붙는 낱말("기능"·"출시" 등)은 뺀다.
         keywords: ['보존기간', '파일', '파기'],
         dueDate: '2026-12-31',

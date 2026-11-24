@@ -10,8 +10,8 @@ const MERGED_PULL_REQUEST = {
   number: 971,
   title: '급식 룰 저장',
   body: '',
-  repo: 'schoolbell-e/sbe-server',
-  url: 'https://github.com/schoolbell-e/sbe-server/pull/971',
+  repo: 'acme-corp/acme-server',
+  url: 'https://github.com/acme-corp/acme-server/pull/971',
   state: 'merged' as const,
   mergedAt: '2026-06-17T04:00:00.000Z',
   updatedAt: '2026-06-17T04:00:00.000Z',
@@ -24,7 +24,7 @@ const SECOND_MERGED_PULL_REQUEST = {
   ...MERGED_PULL_REQUEST,
   number: 972,
   title: '계획 없는 주간 회고',
-  url: 'https://github.com/schoolbell-e/sbe-server/pull/972',
+  url: 'https://github.com/acme-corp/acme-server/pull/972',
 };
 
 // 입력을 그대로 돌려주는 통과 mock — 실제 HumanizeService 의 best-effort 계약과 같다.
@@ -46,7 +46,7 @@ const makeConfig = (author: string | null = 'idaeri') => ({
       return author ?? undefined;
     }
     if (key === 'IMPACT_REPORT_GITHUB_REPO') {
-      return 'schoolbell-e/sbe-server';
+      return 'acme-corp/acme-server';
     }
     return undefined;
   }),
@@ -145,10 +145,10 @@ describe('WeeklySummaryAutopilotTask', () => {
       }),
     );
     expect(worklogExecute.mock.calls[0][0].workText).toContain(
-      'schoolbell-e/sbe-server#971',
+      'acme-corp/acme-server#971',
     );
     expect(worklogExecute.mock.calls[0][0].workText).toContain(
-      'schoolbell-e/sbe-server#972',
+      'acme-corp/acme-server#972',
     );
     expect(ceoExecute).toHaveBeenCalled();
   });
@@ -336,7 +336,7 @@ describe('WeeklySummaryAutopilotTask', () => {
 
     expect(githubClient.listAuthorMergedPullRequestsSince).toHaveBeenCalledWith(
       {
-        repo: 'schoolbell-e/sbe-server',
+        repo: 'acme-corp/acme-server',
         author: 'idaeri',
         sinceIsoDate: '2026-06-10T15:00:00.000Z',
         untilIsoDate: '2026-06-17T15:00:00.000Z',
@@ -350,7 +350,7 @@ describe('WeeklySummaryAutopilotTask', () => {
       }),
     );
     expect(worklogExecute.mock.calls[0][0].workText).toContain(
-      'schoolbell-e/sbe-server#971',
+      'acme-corp/acme-server#971',
     );
     expect(worklogExecute.mock.calls[0][0].workText).toContain('[2026-06-17]');
   });

@@ -14,7 +14,7 @@ import {
 import { escapeSlackMrkdwn } from './mrkdwn.util';
 
 const DECLARE_EXAMPLE =
-  '이번 분기 목표는 보존기간 파일 파기, 달성 기준은 sbe-api-v5 운영 배포 완료, 기한 12월 31일';
+  '이번 분기 목표는 보존기간 파일 파기, 달성 기준은 acme-api-v5 운영 배포 완료, 기한 12월 31일';
 
 export const formatGoalList = (goals: ProductGoalRecord[]): string => {
   if (goals.length === 0) {

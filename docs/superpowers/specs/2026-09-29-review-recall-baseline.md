@@ -24,7 +24,7 @@ diff 나 같은 파일 안에 근거가 다 있던 것 13건, 레포 안 다른 
   필요한 결함)은 이 표본에서 0건으로 나와도 없다는 뜻이 아니다.
 - **이대리가 gemini 보다 못하다는 뜻이 아니다.** 이대리만 잡은 결함은 이 대조의 분모에 없다.
 - **재현할 수 없는 측정이다.** gemini Code Assist 소비자판이 종료돼("The consumer version of Gemini Code
-  Assist on GitHub has been sunset", `sbe-api-v5-puppeteer#103` 요약 코멘트) 최근 PR 에는 인라인 지적이
+  Assist on GitHub has been sunset", `acme-api-v5-puppeteer#103` 요약 코멘트) 최근 PR 에는 인라인 지적이
   없다. 이 표본은 더 늘지 않는다.
 
 ## 대상과 방법
@@ -34,10 +34,10 @@ diff 나 같은 파일 안에 근거가 다 있던 것 13건, 레포 안 다른 
 
 | 레포 | 이대리 카드 PR | gemini 지적 PR | gemini 원 지적 |
 |---|---|---|---|
-| `sbe-api-v5` | 63 | 53 | 105 |
-| `sbe-spinoff-workspace` | 41 | 38 | 106 |
-| `sbe-api-v4` | 15 | 11 | 24 |
-| `sbe-api-v5-puppeteer` | 41 | 0 | 0 — gemini 는 종료 안내 요약만 남김 |
+| `acme-api-v5` | 63 | 53 | 105 |
+| `acme-spinoff-workspace` | 41 | 38 | 106 |
+| `acme-api-v4` | 15 | 11 | 24 |
+| `acme-api-v5-puppeteer` | 41 | 0 | 0 — gemini 는 종료 안내 요약만 남김 |
 | `DDD_BE` | 27 | 0 | 0 — gemini 미설치 |
 
 gemini 심각도 분포: critical 4 · high 67 · medium 164. 표본을 뽑지 않고 **235건 전량**을 판정했다.
@@ -109,11 +109,11 @@ failedStage 순서, `spinoff#2963` 전체 메모리 집계, `spinoff#3052` 페�
 | 4 | `v5#1145` | `ContentFilterModel.ts:676` | 의존성 부분 전달 시 `loadRules` undefined | A |
 | 5 | `v5#1147`·`#1148` | `Manager.ts:274` | ack/nack 예외 시 워커 미반환, 이중 반환 | A |
 | 6 | `v5#1152` | `ContentFilterModel.ts:500` | 금칙어 전체 trim 으로 관리자가 넣은 경계 공백 무효 | A |
-| 7 | `spinoff#2752` | `schoolbell-oidc-rp.controller.ts:123` | fetch 네트워크 오류가 500 으로 샘(바로 아래 JSON 실패는 503) | A |
+| 7 | `spinoff#2752` | `acme-oidc-rp.controller.ts:123` | fetch 네트워크 오류가 500 으로 샘(바로 아래 JSON 실패는 503) | A |
 | 8 | `spinoff#2772` | `student-merge.service.ts:89` | A→B 병합 뒤 B→C 병합 시 A 의 리다이렉트가 B 에 머묾 | A |
-| 9 | `spinoff#2831` | `schoolbell-oidc-rp.controller.ts:226-231` | 외부 프로필 필드가 객체면 Prisma where 에서 필터로 해석돼 다른 사용자로 로그인 | A |
-| 10 | `spinoff#2831` | `schoolbell-oidc-rp.controller.ts:200` | 업스트림 5xx 를 401 로 — 장애가 로그인 실패로 보임 | A |
-| 11 | `spinoff#2831` | `schoolbell-user-link.service.ts:124` | `findFirst` 가 이미 연동된 첫 후보를 집어 새 사용자를 만듦 | A |
+| 9 | `spinoff#2831` | `acme-oidc-rp.controller.ts:226-231` | 외부 프로필 필드가 객체면 Prisma where 에서 필터로 해석돼 다른 사용자로 로그인 | A |
+| 10 | `spinoff#2831` | `acme-oidc-rp.controller.ts:200` | 업스트림 5xx 를 401 로 — 장애가 로그인 실패로 보임 | A |
+| 11 | `spinoff#2831` | `acme-user-link.service.ts:124` | `findFirst` 가 이미 연동된 첫 후보를 집어 새 사용자를 만듦 | A |
 | 12 | `spinoff#2836` | `seed.sql:112` | client 행만 있고 부모 App 행이 없어 로컬 로그인 차단(같은 파일 18-19행 계약) | A |
 | 13 | `spinoff#2906` | `entries.service.ts:246` | 유효값이 음수면 취소 시 잔액 증가·CHECK 위반 500 | A |
 | 14 | `v4#264` | `LetterToGroup.php:178` | 삭제된 글에 410 blinded 응답(같은 파일 `getList` 는 soft-delete 조건 사용) | B |
@@ -214,6 +214,6 @@ eslint `--fix` 가 런타임 import 를 type import 로 바꿈, `spinoff#3073` �
   gemini 가 구조적으로 못 보는 유형(도메인 지식 등)은 표본에 없다.
 - 판정 대부분이 작성자 답글에 기대고 있다. 작성자가 수용했지만 실제로는 결함이 아니었던 경우(방어적 수용)는
   별도 분류로 뺐으나, 경계가 흐린 건이 남아 있을 수 있다.
-- `personal_agents`·`DDD_BE`·`sbe-api-v5-puppeteer` 는 gemini 인라인 지적이 없어 이 방법으로 재지 못했다.
+- `personal_agents`·`DDD_BE`·`acme-api-v5-puppeteer` 는 gemini 인라인 지적이 없어 이 방법으로 재지 못했다.
 - gemini 소비자판 종료로 이 방법은 더 이상 새 표본을 만들지 못한다. 이후 눈금은 이 재리뷰 대상 27개를
   고정 재생 표본으로 쓰거나, 원장의 대안(머지 후 재수정 추적)으로 옮겨야 한다.

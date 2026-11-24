@@ -285,7 +285,7 @@ describe('CodeReviewerDispatcher', () => {
 
   describe('링크 없는 후속 지시와 게시 결과 (2026-08-27)', () => {
     const PR_282_LINK =
-      '<https://github.com/schoolbell-e/sbe-survey-v5/pull/282|github.com/schoolbell-e/sbe-survey-v5/pull/282>';
+      '<https://github.com/acme-corp/acme-survey-v5/pull/282|github.com/acme-corp/acme-survey-v5/pull/282>';
     const reviewTurn = (text: string, agentType: AgentType | null) => ({
       role: 'user' as const,
       text,
@@ -307,7 +307,7 @@ describe('CodeReviewerDispatcher', () => {
 
       expect(reviewPullRequestExecute).toHaveBeenCalledWith(
         expect.objectContaining({
-          prRef: 'schoolbell-e/sbe-survey-v5#282',
+          prRef: 'acme-corp/acme-survey-v5#282',
           publish: true,
         }),
       );
@@ -361,7 +361,7 @@ describe('CodeReviewerDispatcher', () => {
         agentRunId: 7,
         publication: {
           kind: 'NOT_ALLOWED',
-          repo: 'schoolbell-e/sbe-survey-v5',
+          repo: 'acme-corp/acme-survey-v5',
         },
       });
 
