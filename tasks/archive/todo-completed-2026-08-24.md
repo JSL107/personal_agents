@@ -105,7 +105,7 @@
 - 최종 게이트 재실행: lint 0, tsc 0, test 0(404 suites/3,411 tests + 5 suites/40 tests), build 0.
 - 재리뷰 보완 1 — 보정을 프로필 **생성** 지점에만 두어, 저장된 프로필을 읽는 **소비** 지점이 지켜지지 않았다.
   `PublishPortfolioSiteUsecase.resolveProfile` 은 DB 최신 프로필을 그대로 쓰므로, 실 DB(id=13, evidence 124건 중
-  `pr` 문자열 24건)로 발행하면 `#` 가 섞인 slug 3건이 그대로 나갔다(`acme-corp-sbe-api-v5-pr-#984` 등).
+  `pr` 문자열 24건)로 발행하면 `#` 가 섞인 slug 3건이 그대로 나갔다(`acme-corp-acme-api-v5-pr-#984` 등).
   `mergeAccomplishment` 는 기존 성과를 `kept` 로 유지하고 `reflect-pr` 은 그 회차 PR 만 백필하므로, 누적된
   과거 성과(이 프로필은 26건)는 어떤 재실행으로도 보정되지 않는다 — 즉 증상이 그대로 남는 경로였다.
   `toPrNumber` 를 export 해 `buildProjectSlug` 와 `earliestEvidence` 정렬에 적용했다. 숫자로 읽을 수 없는

@@ -19,7 +19,7 @@ describe('buildFindingReferences', () => {
     {
       id: 'finding-unmoved:acme-corp/acme-api-v5-puppeteer#153',
       kind: 'FINDING_UNMOVED',
-      label: 'sbe-api-v5-puppeteer#153',
+      label: 'acme-api-v5-puppeteer#153',
       detail: '28일째 미이동',
       url: 'https://github.com/acme-corp/acme-api-v5-puppeteer/pull/153',
     },
@@ -39,7 +39,7 @@ describe('buildFindingReferences', () => {
     );
     expect(references).toEqual([
       {
-        text: 'sbe-conduct-api#3922 학교 관리자용 항목 추가',
+        text: 'acme-conduct-api#3922 학교 관리자용 항목 추가',
         url: 'https://github.com/acme-corp/acme-conduct-api/pull/3922',
       },
     ]);
@@ -52,14 +52,14 @@ describe('buildFindingReferences', () => {
       facts,
       new Map([[key, '정합성 검증']]),
     );
-    expect(found[0].text).toBe('sbe-api-v5-puppeteer#153 정합성 검증');
+    expect(found[0].text).toBe('acme-api-v5-puppeteer#153 정합성 검증');
 
     const [missing] = buildFindingReferences(
       [finding([`finding-unmoved:${key}`])],
       facts,
       new Map(),
     );
-    expect(missing[0].text).toBe('sbe-api-v5-puppeteer#153');
+    expect(missing[0].text).toBe('acme-api-v5-puppeteer#153');
   });
 
   it('조회된 원래 제목이 있으면 잘린 label 보다 먼저 쓴다', () => {
@@ -70,7 +70,7 @@ describe('buildFindingReferences', () => {
       new Map([[key, '학교 관리자용 항목 추가와 권한 정리']]),
     );
     expect(references[0].text).toBe(
-      'sbe-conduct-api#3922 학교 관리자용 항목 추가와 권한 정리',
+      'acme-conduct-api#3922 학교 관리자용 항목 추가와 권한 정리',
     );
   });
 
@@ -96,7 +96,7 @@ describe('buildFindingReferences', () => {
     );
     expect(references).toEqual([
       {
-        text: 'sbe-api-v5-puppeteer#153 정합성 검증',
+        text: 'acme-api-v5-puppeteer#153 정합성 검증',
         url: 'https://github.com/acme-corp/acme-api-v5-puppeteer/pull/153',
       },
     ]);

@@ -7,9 +7,9 @@ import { wrapUntrustedInput } from '../../../common/llm/untrusted-input.util';
  * 관례를 모른 채 리뷰해서, 레포가 문서로 정해 둔 것을 결함으로 지적했다.
  *
  * 문서 전체가 아니라 절 하나만 싣는다. 실측(2026-11-16, 리뷰 대상 레포 4곳의 AGENTS.md):
- * - sbe-spinoff-workspace 는 Nx 사용법 안내뿐이라 통째로 실으면 잡음이다.
- * - sbe-api-v5 는 "컨벤션" 절이 쓸모 있지만 DB 조회 규칙 같은 무관한 절이 섞여 있다.
- * - sbe-slack-bot 은 "Review Focus" 절이 있다. 이 레포는 "Code Review Rules" 절이 있다.
+ * - acme-spinoff-workspace 는 Nx 사용법 안내뿐이라 통째로 실으면 잡음이다.
+ * - acme-api-v5 는 "컨벤션" 절이 쓸모 있지만 DB 조회 규칙 같은 무관한 절이 섞여 있다.
+ * - acme-slack-bot 은 "Review Focus" 절이 있다. 이 레포는 "Code Review Rules" 절이 있다.
  * 규약 전문을 넣으면 토큰만 늘고 지적이 희석된다는 이 레포의 실측(code-reviewer-system.prompt.ts)과 같은 방향이다.
  * 그래서 리뷰 절 → 컨벤션 절 순으로 찾고, 둘 다 없으면 싣지 않는다.
  *

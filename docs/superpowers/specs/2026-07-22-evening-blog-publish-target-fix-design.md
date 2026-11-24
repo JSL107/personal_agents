@@ -11,8 +11,8 @@
 `EveningBlogPublishApplier`는 `EVENING_RETRO_BLOG_NOTION_PAGE_ID`가 가리키는 페이지 밑에 자식 페이지를 만든다(`evening-blog-publish.applier.ts:79-91`). 그런데 이 값이 경력 로그 페이지와 동일하게 설정돼 있었다.
 
 ```
-EVENING_RETRO_BLOG_NOTION_PAGE_ID = 34b69cbba394807588c4e2e5b95f4be9   → "예시회사" (경력 로그)
-CAREER_LOG_NOTION_PAGE_ID         = 34b69cbba394807588c4e2e5b95f4be9   → 동일
+EVENING_RETRO_BLOG_NOTION_PAGE_ID = <경력 로그 페이지 ID>           → "예시회사" (경력 로그)
+CAREER_LOG_NOTION_PAGE_ID         = <경력 로그 페이지 ID>           → 동일
 ```
 
 의도한 적재 위치는 "블로그 초안" 데이터베이스(`37c69cbba394806a983fc42d03a12f19`)다. 자연어 경로(`@이대리 ... 블로그 써줘` → Hermes)는 이미 이 DB에 쓰고 있어, **두 경로가 서로 다른 곳에 결과를 남기고 있었다.**

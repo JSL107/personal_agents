@@ -400,7 +400,7 @@ describe('readCodexSessions', () => {
       JSON.stringify({
         pid: 10867,
         sessionId: 'codex-1',
-        cwd: '/repo/sbe-api',
+        cwd: '/repo/acme-api',
         transcriptPath: transcript,
         startedAt: 1785124531052,
         source: 'codex',
@@ -414,8 +414,8 @@ describe('readCodexSessions', () => {
       sessionId: 'codex-1',
       pid: 10867,
       source: 'codex',
-      name: 'sbe-api',
-      cwd: '/repo/sbe-api',
+      name: 'acme-api',
+      cwd: '/repo/acme-api',
       state: 'active',
     });
   });

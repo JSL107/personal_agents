@@ -65,7 +65,7 @@ describe('toReadableMessage', () => {
     );
 
     expect(result.text).toContain(
-      '(<https://github.com/acme-corp/acme-api-v5/pull/52|sbe-api-v5 #52>)',
+      '(<https://github.com/acme-corp/acme-api-v5/pull/52|acme-api-v5 #52>)',
     );
     expect(result.text).not.toContain('(https://github.com');
     expect(result.blocks).toBeDefined();

@@ -133,7 +133,7 @@ describe('formatPoShadowReport', () => {
         findingReferences: [
           [
             {
-              text: 'sbe-conduct-api#3922 학교 관리자용',
+              text: 'acme-conduct-api#3922 학교 관리자용',
               url: 'https://github.com/o/r/pull/3922',
             },
             { text: '<!channel> 워커', url: null },
@@ -143,7 +143,7 @@ describe('formatPoShadowReport', () => {
       { detailInThread: true },
     );
     expect(rendered).toContain(
-      '1. 업로드가 멈췄다(#264)\n      • <https://github.com/o/r/pull/3922|sbe-conduct-api#3922 학교 관리자용>\n      • &lt;!channel&gt; 워커\n      → 리뷰어를 지정한다',
+      '1. 업로드가 멈췄다(#264)\n      • <https://github.com/o/r/pull/3922|acme-conduct-api#3922 학교 관리자용>\n      • &lt;!channel&gt; 워커\n      → 리뷰어를 지정한다',
     );
   });
 

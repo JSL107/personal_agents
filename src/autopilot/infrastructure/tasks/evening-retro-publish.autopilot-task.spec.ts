@@ -532,7 +532,7 @@ describe('EveningRetroPublishTask', () => {
     expect(result.detailText).toContain('실제 PR 근거가 충분하다.');
     // 카드는 첫 줄만으로 판단되게 점수·제목·근거만 싣고, 쓸 가치·개요는 싣지 않는다.
     expect(blogPreview?.previewText.split('\n')[0]).toContain(
-      '근거 회사 실무 sbe-api-v5#864',
+      '근거 회사 실무 acme-api-v5#864',
     );
     expect(blogPreview?.previewText).not.toContain('왜 쓸 가치');
     expect(blogPreview?.previewText).not.toContain('*초안 개요*');
@@ -586,7 +586,7 @@ describe('EveningRetroPublishTask', () => {
     );
 
     expect(blogPreview?.previewText).toBe(
-      '📝 *블로그 후보 70점* · 「T」 · 근거 회사 실무 sbe-api-v5#864\n✅ 누르면 이 PR 들로 본문을 써 Notion 초안으로 올립니다. GitHub 공개 발행은 따로 묻습니다.',
+      '📝 *블로그 후보 70점* · 「T」 · 근거 회사 실무 acme-api-v5#864\n✅ 누르면 이 PR 들로 본문을 써 Notion 초안으로 올립니다. GitHub 공개 발행은 따로 묻습니다.',
     );
     expect(blogPreview?.slackText).toBe(
       '📝 *블로그 발행할까요?*\n제목: T\n어디로: 노션 블로그\n왜: 실제 PR 근거가 충분하다.\n_승인하면 초안을 만들어 노션에 올려요._',
@@ -616,7 +616,7 @@ describe('EveningRetroPublishTask', () => {
     expect(careerPreview?.previewText).toContain('• 회사 실무:');
     // PR 줄은 재서술 메모가 아니라 제목 + 링크다(분석 보고 §4 3-1).
     expect(careerPreview?.previewText).toContain(
-      '  • <https://x|sbe-api-v5#864> t',
+      '  • <https://x|acme-api-v5#864> t',
     );
     expect(careerPreview?.previewText).not.toContain(
       'user_to_group 정합성 문제를 트랜잭션 경계로 보강',
@@ -632,7 +632,7 @@ describe('EveningRetroPublishTask', () => {
     // label·hint 만으로는 "왜 적어야 하는지"(코드에 안 남는다)가 전달되지 않는다.
     expect(careerPreview?.previewText).toContain('코드에는 남지 않는 정보');
     expect(careerPreview?.previewText).toContain('아래 칸에 적으면');
-    expect(careerPreview?.slackText).toContain('• sbe-api-v5: 1건');
+    expect(careerPreview?.slackText).toContain('• acme-api-v5: 1건');
     expect(careerPreview?.slackText).toContain('• personal_agents: 1건');
   });
 
@@ -741,7 +741,7 @@ describe('EveningRetroPublishTask', () => {
 
     expect(result.detailText).toContain('개인 프로젝트(이대리)');
     expect(careerPreview?.previewText).toContain('• 회사 실무:');
-    expect(careerPreview?.previewText).toContain('|sbe-api-v5#864>');
+    expect(careerPreview?.previewText).toContain('|acme-api-v5#864>');
     expect(careerPreview?.previewText).toContain('• 개인 프로젝트(이대리):');
     expect(careerPreview?.previewText).toContain('|personal_agents#142>');
   });

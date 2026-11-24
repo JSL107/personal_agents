@@ -2,7 +2,7 @@
  * sync-docs — docs-as-code 생성기 + 드리프트 게이트
  *
  * 코드의 단일 소스(SoT)에서 머신-정확한 레퍼런스 카탈로그를 생성한다.
- * sbe-slack-bot 의 sync-docs(.cjs) 패턴을 이 레포에 맞게 이식한 것.
+ * acme-slack-bot 의 sync-docs(.cjs) 패턴을 이 레포에 맞게 이식한 것.
  *
  * 생성 대상 (둘 다 전체가 생성물 — 수동 편집 금지):
  *   - docs/agent-catalog.md  ← AGENT_REGISTRY + AGENT_TO_PROVIDER (둘 다 import — 타입이 보장)

@@ -149,7 +149,7 @@ interface ReflectPrResult {
 - 단위: `reflect-pr.usecase.spec.ts` (mock github/notion/repo/modelRouter로 fetch→합성→dedup 편입→포폴 append 흐름), 프롬프트 parser spec, `extract-pr-reference.spec.ts` (URL/shorthand/문장-내/미검출).
 - 라우팅: 1차/2차 프롬프트 spec에 "PR+회고+이력서" → CAREER_MATE/REFLECT_PR, "PR 리뷰해줘" → CODE_REVIEWER 유지 케이스.
 - 게이트: `pnpm lint:check && pnpm test && pnpm build` 3중 green.
-- E2E(수동): `sbe-workspace#1692`로 실제 실행 — 사용자 터미널.
+- E2E(수동): `acme-workspace#1692`로 실제 실행 — 사용자 터미널.
 
 ## 15. AGENTS.md §4 체크리스트 적용 여부
 - 신규 **에이전트가 아니라 기존 CAREER_MATE 내부 액션**이므로 13개 중 다수 해당 없음.

@@ -238,7 +238,7 @@ describe('회수 사실의 label·url — 실측 키가 잘리지 않아야 한�
       ]),
       now: NOW,
     });
-    expect(result.facts[0].label).toBe('sbe-api-v5-puppeteer#135');
+    expect(result.facts[0].label).toBe('acme-api-v5-puppeteer#135');
     expect(result.facts[0].label).toContain('#135');
   });
 

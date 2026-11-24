@@ -399,7 +399,7 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
     //
     // PR 이 갱신돼도 다시 열지 않는다. 한때 "갱신 뒤 한 번 더" 를 허용했지만, 한도를 몇 배
     // 넘는 PR 이 갱신 사이에 한도 아래로 줄어드는 일은 없었고 push 마다 같은 실패만 쌓였다
-    // (실측 2026-11-04~10, sbe-api-v5-puppeteer#52 76012줄 — 10건 이상 전부 같은 사유).
+    // (실측 2026-11-04~10, acme-api-v5-puppeteer#52 76012줄 — 10건 이상 전부 같은 사유).
     // 차단은 SWEEP_REVIEW_LOOKBACK_DAYS 가 지나 실패 기록이 판정 창 밖으로 나가면 풀린다.
     if (latest.errorCode === CodeReviewerErrorCode.DIFF_TOO_LARGE) {
       return 'SKIP';

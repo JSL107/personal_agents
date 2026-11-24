@@ -1,7 +1,7 @@
 /**
  * 사람이 판정한 PR 지적을 당시 headSha로 다시 리뷰한다. 모델 구독 쿼터를 쓴다.
  * diff는 PR에 고정된 base SHA와 당시 headSha 사이로 재구성한다 — base를 브랜치 이름으로 잡으면
- * 그 사이 base가 head를 흡수한 PR에서 빈 diff가 나온다(실측: sbe-api-v5-puppeteer#152 0 bytes).
+ * 그 사이 base가 head를 흡수한 PR에서 빈 diff가 나온다(실측: acme-api-v5-puppeteer#152 0 bytes).
  * 파일 목록과 증감 줄 수는 그 diff에서 다시 센다. 제목·본문·작성자는 현재 값이다 —
  * GitHub가 과거 시점의 PR 본문을 주지 않으므로, 그 뒤 수정된 PR은 입력이 완전히 같지는 않다.
  * 학습 규약에는 재생 대상의 기각 사유가 이미 포함될 수 있어, 운영과 같은 조건이지만
