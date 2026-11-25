@@ -260,6 +260,7 @@ describe('PaperTradingAutopilotTask', () => {
       ],
       exitBandOrderCount: 0,
       exitBandAccounts: [],
+      delistedLiquidation: { fills: [], failures: [] },
     });
   });
 
@@ -280,6 +281,7 @@ describe('PaperTradingAutopilotTask', () => {
       accounts: [],
       exitBandOrderCount: 0,
       exitBandAccounts: [],
+      delistedLiquidation: { fills: [], failures: [] },
     });
   });
 
@@ -393,6 +395,50 @@ describe('PaperTradingAutopilotTask', () => {
     await expect(task.run(context)).rejects.toThrow(
       '가상 계좌 2개 중 2개를 평가하지 못했습니다: 장기투자: 시세 조회 실패 / 단기매매: 계좌 상태 불일치',
     );
+  });
+
+  // 폐지 청산은 평가보다 먼저 커밋된다. 평가가 실패해도 무엇을 팔았는지가 실패 원장에 남아야 하고,
+  // 성공 회차(재시도 포함)는 카드와 작업 기록에 싣는다.
+  const DELISTED_FILL = {
+    accountName: 'LONG_TERM',
+    tickerCode: '417310',
+    tickerName: '코람코더원리츠',
+    quantity: '743',
+    price: '2455',
+  };
+
+  it('평가가 실패해도 폐지 청산 내역을 실패 메시지에 남긴다', async () => {
+    const { task, liquidateDelisted } = createFixture({
+      accounts: [failedEntry('SWING', '시세 조회 실패')],
+    });
+    liquidateDelisted.execute.mockResolvedValue({
+      fills: [DELISTED_FILL],
+      failures: [],
+    });
+
+    await expect(task.run(context)).rejects.toThrow(
+      '상장폐지 청산 1건 체결: [장기투자] 코람코더원리츠(417310) 743주',
+    );
+  });
+
+  it('폐지 청산 내역을 카드와 작업 기록에 싣는다', async () => {
+    const { task, liquidateDelisted, agentRun } = createFixture({
+      accounts: [succeededEntry('LONG_TERM')],
+    });
+    const delisted = {
+      fills: [DELISTED_FILL],
+      failures: ['코람코더원리츠(417310): 체결되지 않았습니다'],
+    };
+    liquidateDelisted.execute.mockResolvedValue(delisted);
+
+    const result = await task.run(context);
+
+    expect(result.summaryText).toContain(
+      '*상장폐지 청산 1건*\n• [장기투자] 코람코더원리츠(417310) 743주 · 2455원 청산\n• ⚠️ 코람코더원리츠(417310): 체결되지 않았습니다',
+    );
+    const run = agentRun.execute.mock.calls[0][0].run;
+    const execution = await run({ agentRunId: 71 });
+    expect(execution.output.delistedLiquidation).toEqual(delisted);
   });
 
   // 계좌별 격리(한 계좌의 예외가 나머지 계좌의 평가·적재를 막지 않는 것)는

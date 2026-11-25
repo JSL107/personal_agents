@@ -53,6 +53,8 @@ const createFixture = () => {
     }),
     findDuePendingOrders: jest.fn().mockResolvedValue([dueOrder()]),
     expirePendingOrder: jest.fn().mockResolvedValue(true),
+    expirePendingOrdersForTickers: jest.fn().mockResolvedValue(0),
+    findDelistedLiquidationTrades: jest.fn().mockResolvedValue([]),
   };
   const executeOrder = {
     execute: jest.fn().mockResolvedValue({ status: 'FILLED', quantity: '743' }),
@@ -67,6 +69,14 @@ const createFixture = () => {
 describe('LiquidateDelistedPositionsUsecase', () => {
   it('폐지 종목을 밴드 값 없이 주문하고 마지막 종가로 그날 체결한다', async () => {
     const { usecase, repository, executeOrder } = createFixture();
+    const ledgerTrade = {
+      accountName: 'LONG_TERM',
+      tickerCode: '417310',
+      tickerName: '코람코더원리츠',
+      quantity: '743',
+      price: '2455',
+    };
+    repository.findDelistedLiquidationTrades.mockResolvedValue([ledgerTrade]);
 
     const result = await usecase.execute({
       executedAt: EXECUTED_AT,
@@ -103,19 +113,10 @@ describe('LiquidateDelistedPositionsUsecase', () => {
         tradeDate: '2026-11-25',
       }),
     );
-    expect(result).toEqual({
-      fills: [
-        {
-          accountName: 'LONG_TERM',
-          tickerCode: '417310',
-          tickerName: '코람코더원리츠',
-          quantity: '743',
-          price: '2455',
-          priceDate: '2026-11-19',
-        },
-      ],
-      failures: [],
-    });
+    expect(repository.findDelistedLiquidationTrades).toHaveBeenCalledWith(
+      TRADE_DAY,
+    );
+    expect(result).toEqual({ fills: [ledgerTrade], failures: [] });
   });
 
   it('폐지 보유가 없으면 주문도 체결도 하지 않는다', async () => {
@@ -144,31 +145,52 @@ describe('LiquidateDelistedPositionsUsecase', () => {
     ]);
   });
 
-  // 밴드가 먼저 걸어 둔 매도는 시가가 없어 체결기가 영영 못 채운다. 그 PENDING 때문에 새 주문은
-  // 건너뛰어지므로 기존 주문을 집어 체결해야 보유가 빠진다.
-  it('이미 걸려 있던 매도 주문도 마지막 종가로 체결한다', async () => {
+  // 기존 대기 주문(미래 목표일·일부 수량·밴드 매도·매수)을 재사용하면 보유가 남거나 엉뚱한
+  // 성적으로 잡히고, 남은 대기 매도는 새 주문 생성까지 막는다. 지운 뒤 전량으로 새로 판다.
+  it('폐지 종목의 기존 대기 주문을 모두 만료시킨 뒤 새 주문만 체결한다', async () => {
     const { usecase, repository, executeOrder } = createFixture();
-    repository.createExitBandOrders.mockResolvedValue({
-      created: 0,
-      createdTickerIds: [],
-      skippedByPendingSell: 1,
-      skippedByNoPosition: 0,
-    });
     repository.findDuePendingOrders.mockResolvedValue([
-      dueOrder({ id: 555, reason: '종가 밴드 손절' }),
-      // 다른 계좌·다른 종목·매수는 건드리지 않는다.
+      dueOrder(),
+      // 다른 계좌·다른 종목·매수는 체결하지 않는다.
       dueOrder({ id: 556, accountId: 6 }),
       dueOrder({ id: 557, tickerId: 21 }),
       dueOrder({ id: 558, side: 'BUY' }),
     ]);
 
-    const result = await usecase.execute({ executedAt: EXECUTED_AT });
+    await usecase.execute({ executedAt: EXECUTED_AT });
 
+    expect(repository.expirePendingOrdersForTickers).toHaveBeenCalledWith({
+      accountId: 5,
+      tickerIds: [178],
+      statusReason: '상장폐지 청산으로 대체',
+    });
+    expect(
+      repository.expirePendingOrdersForTickers.mock.invocationCallOrder[0],
+    ).toBeLessThan(repository.createExitBandOrders.mock.invocationCallOrder[0]);
     expect(executeOrder.execute).toHaveBeenCalledTimes(1);
     expect(executeOrder.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ orderId: 555, price: '2455' }),
+      expect.objectContaining({ orderId: 901, requestedQuantity: '743' }),
     );
-    expect(result.fills).toHaveLength(1);
+  });
+
+  // 평가가 실패해 재시도된 회차는 보유가 0 이라 아무것도 팔지 않는다. 그래도 카드에는 그날
+  // 앞선 회차가 판 내역이 원장에서 나와야 한다.
+  it('팔 보유가 없어도 그날 원장의 청산 내역을 돌려준다', async () => {
+    const { usecase, repository, executeOrder } = createFixture();
+    repository.findDelistedPositions.mockResolvedValue([]);
+    const ledgerTrade = {
+      accountName: 'LONG_TERM',
+      tickerCode: '417310',
+      tickerName: '코람코더원리츠',
+      quantity: '743',
+      price: '2455',
+    };
+    repository.findDelistedLiquidationTrades.mockResolvedValue([ledgerTrade]);
+
+    const result = await usecase.execute({ executedAt: EXECUTED_AT });
+
+    expect(executeOrder.execute).not.toHaveBeenCalled();
+    expect(result).toEqual({ fills: [ledgerTrade], failures: [] });
   });
 
   // 체결 못 한 주문을 PENDING 으로 두면 체결기가 다음 시가로 채우려다 매번 실패한다.
@@ -201,7 +223,6 @@ describe('LiquidateDelistedPositionsUsecase', () => {
     const result = await usecase.execute({ executedAt: EXECUTED_AT });
 
     expect(executeOrder.execute).toHaveBeenCalledTimes(1);
-    expect(result.fills).toHaveLength(1);
     expect(result.failures).toEqual(['SWING: DB 끊김']);
   });
 });

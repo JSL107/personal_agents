@@ -11,6 +11,9 @@ export type OrderStatus =
   | 'CANCELLED';
 export type PaperMarket = 'KOSPI' | 'KOSDAQ' | 'KONEX';
 
+// 상장폐지 청산 주문의 사유 머리말. 카드가 그날 청산을 원장에서 다시 찾을 때 이것으로 고른다.
+export const DELISTED_LIQUIDATION_REASON_PREFIX = '상장폐지 청산';
+
 export const parseTradeSide = (value: string): TradeSide => {
   const normalized = value.toUpperCase();
   if (normalized === 'BUY' || normalized === 'SELL') {

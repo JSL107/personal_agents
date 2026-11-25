@@ -53,6 +53,7 @@ interface PaperTradingAudit {
   accounts: PaperTradingAccountAudit[];
   exitBandOrderCount: number;
   exitBandAccounts: ApplyExitBandResult['accounts'];
+  delistedLiquidation: LiquidateDelistedResult;
 }
 
 const buildAccountAudit = (
@@ -88,12 +89,14 @@ const buildAccountAudit = (
 const buildAudit = (
   result: EvaluateAllAccountsResult,
   exitBand: ApplyExitBandResult,
+  delisted: LiquidateDelistedResult,
 ): PaperTradingAudit => ({
   accountCount: result.accounts.length,
   failedCount: result.accounts.filter((entry) => !entry.evaluation).length,
   accounts: result.accounts.map(buildAccountAudit),
   exitBandOrderCount: exitBand.createdCount,
   exitBandAccounts: exitBand.accounts,
+  delistedLiquidation: delisted,
 });
 
 // 규칙이 건 매도는 다음 거래일 시가에 체결된다. 카드에 안 적으면 다음날 아침 잔고가
@@ -130,7 +133,7 @@ const buildDelistedText = (delisted: LiquidateDelistedResult): string => {
   const lines = [
     ...delisted.fills.map(
       (fill) =>
-        `• [${PAPER_ACCOUNT_LABEL[fill.accountName] ?? fill.accountName}] ${fill.tickerName}(${fill.tickerCode}) ${fill.quantity}주 · 마지막 종가 ${fill.price}원(${fill.priceDate})`,
+        `• [${PAPER_ACCOUNT_LABEL[fill.accountName] ?? fill.accountName}] ${fill.tickerName}(${fill.tickerCode}) ${fill.quantity}주 · ${fill.price}원 청산`,
     ),
     ...delisted.failures.map((failure) => `• ⚠️ ${failure}`),
   ];
@@ -275,8 +278,19 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
                   )
                   .join(', ')}`
               : '';
+          // 폐지 청산도 이 앞에서 커밋됐다. 재시도 카드는 원장에서 다시 읽지만, 실패한 회차의
+          // 원장 기록에도 무엇을 팔았는지 남긴다.
+          const delistedSummary =
+            delisted.fills.length > 0
+              ? ` / 상장폐지 청산 ${delisted.fills.length}건 체결: ${delisted.fills
+                  .map(
+                    (fill) =>
+                      `[${PAPER_ACCOUNT_LABEL[fill.accountName] ?? fill.accountName}] ${fill.tickerName}(${fill.tickerCode}) ${fill.quantity}주`,
+                  )
+                  .join(', ')}`
+              : '';
           throw new Error(
-            `가상 계좌 ${evaluations.accounts.length}개 중 ${failedEntries.length}개를 평가하지 못했습니다: ${detail}${evaluatedText}${exitBandText}`,
+            `가상 계좌 ${evaluations.accounts.length}개 중 ${failedEntries.length}개를 평가하지 못했습니다: ${detail}${evaluatedText}${exitBandText}${delistedSummary}`,
           );
         }
         // 청산이 없는 날도 매일 채널로 낸다. 청산 있는 날만 보내던 2026-10-13~11-03(#778)에는
@@ -307,7 +321,7 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
         return {
           result: taskResult,
           modelUsed: 'deterministic',
-          output: buildAudit(evaluations, exitBand),
+          output: buildAudit(evaluations, exitBand, delisted),
         };
       },
     });

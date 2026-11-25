@@ -2,8 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { getKstDateOf, utcMidnightOf } from '../../common/util/kst-date.util';
+import { DELISTED_LIQUIDATION_REASON_PREFIX } from '../domain/paper-account.type';
 import { getKstClock } from '../domain/trade-calendar';
 import {
+  DelistedLiquidationTradeRecord,
   DelistedPositionRecord,
   PaperAccountNamedRecord,
   PaperTradingPrismaRepository,
@@ -17,17 +19,10 @@ export interface LiquidateDelistedCommand {
   agentRunId?: number | null;
 }
 
-export interface DelistedLiquidationFill {
-  accountName: string;
-  tickerCode: string;
-  tickerName: string;
-  quantity: string;
-  price: string;
-  priceDate: string;
-}
-
 export interface LiquidateDelistedResult {
-  fills: DelistedLiquidationFill[];
+  // 그날 원장에 체결된 폐지 청산 전부. 이번 실행이 판 것만 담으면 평가 실패 뒤 재시도 회차는
+  // 보유가 이미 0 이라 빈 목록이 되어 카드에서 청산 사실이 사라진다.
+  fills: DelistedLiquidationTradeRecord[];
   // 청산하지 못한 종목과 사유. 남은 보유는 장마감 평가를 계속 막으므로 카드에 드러나야 한다.
   failures: string[];
 }
@@ -90,6 +85,8 @@ export class LiquidateDelistedPositionsUsecase {
         );
       }
     }
+    result.fills =
+      await this.repository.findDelistedLiquidationTrades(tradeDay);
     return result;
   }
 
@@ -108,9 +105,14 @@ export class LiquidateDelistedPositionsUsecase {
     if (priced.length === 0) {
       return;
     }
-    const positionByTickerId = new Map(
-      priced.map((position) => [position.tickerId, position]),
-    );
+    const tickerIds = priced.map((position) => position.tickerId);
+    // 기존 대기 주문은 재사용하지 않고 지운다. 일부 수량 매도·밴드 성적 귀속·미래 목표일이 섞여
+    // 보유가 남거나 엉뚱한 성적으로 잡히고, 그 대기 매도는 새 청산 주문 생성까지 막는다.
+    await this.repository.expirePendingOrdersForTickers({
+      accountId: input.account.id,
+      tickerIds,
+      statusReason: `${DELISTED_LIQUIDATION_REASON_PREFIX}으로 대체`,
+    });
     await this.repository.createExitBandOrders({
       accountId: input.account.id,
       strategy: strategyOf(input.account.name),
@@ -121,21 +123,22 @@ export class LiquidateDelistedPositionsUsecase {
       threshold: null,
       orders: priced.map((position) => ({
         tickerId: position.tickerId,
-        reason: `상장폐지 청산: ${dateText(position.delistedAt)} 폐지 · 마지막 종가 ${position.lastClose.toString()}원(${dateText(position.lastCloseDate)})`,
+        reason: `${DELISTED_LIQUIDATION_REASON_PREFIX}: ${dateText(position.delistedAt)} 폐지 · 마지막 종가 ${position.lastClose.toString()}원(${dateText(position.lastCloseDate)})`,
       })),
     });
-    // 이미 걸려 있던 매도(밴드 청산 등)도 함께 집는다. 폐지 종목은 시가가 없어 체결기가 영영
-    // 체결하지 못하고, 그 PENDING 때문에 위 주문 생성은 건너뛰어진다.
+    const positionByTickerId = new Map(
+      priced.map((position) => [position.tickerId, position]),
+    );
     const dueOrders = await this.repository.findDuePendingOrders(
       input.tradeDay,
     );
-    const sellOrders = dueOrders.filter(
+    const liquidationOrders = dueOrders.filter(
       (order) =>
         order.accountId === input.account.id &&
         order.side === 'SELL' &&
         positionByTickerId.has(order.tickerId),
     );
-    for (const order of sellOrders) {
+    for (const order of liquidationOrders) {
       const position = positionByTickerId.get(order.tickerId);
       if (!position) {
         continue;
@@ -164,14 +167,6 @@ export class LiquidateDelistedPositionsUsecase {
         if (fill.status !== 'FILLED') {
           throw new Error('체결되지 않았습니다');
         }
-        input.result.fills.push({
-          accountName: input.account.name,
-          tickerCode: position.tickerCode,
-          tickerName: position.tickerName,
-          quantity: fill.quantity,
-          price: position.lastClose.toString(),
-          priceDate: dateText(position.lastCloseDate),
-        });
       } catch (error) {
         // PENDING 으로 두면 체결기가 시가 없는 종목을 매 거래일 채우려다 실패한다.
         // 다음 장마감 평가가 새 주문으로 다시 시도한다.

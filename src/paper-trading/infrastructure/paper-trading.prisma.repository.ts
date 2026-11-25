@@ -14,6 +14,7 @@ import {
   ExitBandThreshold,
 } from '../domain/exit-band';
 import {
+  DELISTED_LIQUIDATION_REASON_PREFIX,
   OrderStatus,
   PaperMarket,
   TradeSide,
@@ -63,6 +64,20 @@ export interface PaperPositionWithTicker extends PaperPositionRecord {
 export interface FindDelistedPositionsInput {
   accountId: number;
   onOrBefore: Date;
+}
+
+export interface ExpirePendingOrdersForTickersInput {
+  accountId: number;
+  tickerIds: number[];
+  statusReason: string;
+}
+
+export interface DelistedLiquidationTradeRecord {
+  accountName: string;
+  tickerCode: string;
+  tickerName: string;
+  quantity: string;
+  price: string;
 }
 
 // 상장폐지된 종목의 보유분. 폐지 뒤에는 시세 공급자가 봉을 주지 않으므로 청산가의 근거는
@@ -2099,6 +2114,43 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
       data: { status: 'EXPIRED', statusReason },
     });
     return result.count === 1;
+  }
+
+  // 목표일·방향과 무관하게 지운다. 폐지 청산이 기존 주문을 재사용하면 일부 수량만 팔거나
+  // 밴드 성적으로 잘못 집계되고, 남은 매수는 시가가 없는 종목을 계속 기다린다.
+  async expirePendingOrdersForTickers({
+    accountId,
+    tickerIds,
+    statusReason,
+  }: ExpirePendingOrdersForTickersInput): Promise<number> {
+    const result = await this.prisma.paperOrder.updateMany({
+      where: { accountId, tickerId: { in: tickerIds }, status: 'PENDING' },
+      data: { status: 'EXPIRED', statusReason },
+    });
+    return result.count;
+  }
+
+  // 그날 체결된 폐지 청산. 평가 실패로 재시도된 회차는 보유가 이미 0 이라 청산을 다시 하지
+  // 않으므로, 카드는 이번 실행의 결과가 아니라 원장에서 읽어야 청산 사실이 남는다.
+  async findDelistedLiquidationTrades(
+    tradeDate: Date,
+  ): Promise<DelistedLiquidationTradeRecord[]> {
+    const trades = await this.prisma.paperTrade.findMany({
+      where: {
+        tradeDate,
+        side: 'SELL',
+        order: { reason: { startsWith: DELISTED_LIQUIDATION_REASON_PREFIX } },
+      },
+      include: { account: true, ticker: true },
+      orderBy: { id: 'asc' },
+    });
+    return trades.map((trade) => ({
+      accountName: trade.account.name,
+      tickerCode: trade.ticker.code,
+      tickerName: trade.ticker.name,
+      quantity: trade.quantity.toString(),
+      price: trade.price.toString(),
+    }));
   }
 
   async expireDuePendingOrders(
