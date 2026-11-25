@@ -7,6 +7,7 @@
  *
  * 사용:
  *   pnpm exec ts-node --transpile-only scripts/token-analyzer/analyze.ts
+ *   (선택) FINLENS_PROJECT_ALIASES="클론=본체,..." — 사이드 클론을 본체 프로젝트로 합친다
  *   open scripts/token-analyzer/dashboard.html
  *
  * 정확성 메모:
@@ -123,11 +124,17 @@ interface Parsed {
 }
 
 const projectCache = new Map<string, string>();
-// 사이드 클론(같은 repo 의 별도 체크아웃)을 본체로 병합.
-const PROJECT_ALIASES: Record<string, string> = {
-  'sbe-api-v5-puppeteer-crawl-diag': 'sbe-api-v5-puppeteer',
-  'sbe-api-v5-puppeteer-dash-layout': 'sbe-api-v5-puppeteer',
-};
+// 사이드 클론(같은 repo 의 별도 체크아웃)을 본체로 병합. 저장소 이름이 드러나므로 코드에 두지 않고
+// `FINLENS_PROJECT_ALIASES="클론=본체,클론=본체"` 로 받는다. 비우면 클론이 별도 프로젝트로 보인다.
+const PROJECT_ALIASES: Record<string, string> = Object.fromEntries(
+  (process.env.FINLENS_PROJECT_ALIASES ?? '')
+    .split(',')
+    .map((pair) => pair.split('=').map((part) => part.trim()))
+    .filter(
+      (pair): pair is [string, string] =>
+        pair.length === 2 && pair[0] !== '' && pair[1] !== '',
+    ),
+);
 function projectLabel(cwd: string): string {
   if (!cwd) {
     return '(unknown)';

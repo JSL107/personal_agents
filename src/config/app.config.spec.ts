@@ -27,6 +27,20 @@ describe('validateEnv instagram', () => {
   });
 });
 
+describe('validateEnv COMPANY_GITHUB_ORG', () => {
+  it('빈 문자열은 미설정으로 허용한다', () => {
+    expect(() =>
+      validateEnv({ ...requiredEnv, COMPANY_GITHUB_ORG: '' }),
+    ).not.toThrow();
+  });
+
+  it('조직명 형식이 아니면 거부한다', () => {
+    expect(() =>
+      validateEnv({ ...requiredEnv, COMPANY_GITHUB_ORG: 'acme/corp' }),
+    ).toThrow();
+  });
+});
+
 describe('validateEnv AI_CLI_ENV_SYNC_REPO', () => {
   it('빈 문자열은 graceful OFF 설정으로 허용한다', () => {
     expect(() =>

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 
 import * as cliProcessUtil from '../../model-router/infrastructure/cli-process.util';
+import { AiWeeklyCompanyScope } from '../domain/ai-weekly-company';
 import { AiWeeklyPeriod } from '../domain/ai-weekly-period';
 import { AiWeeklyMetricsRunner } from './ai-weekly-metrics.runner';
 
@@ -17,6 +18,8 @@ const period: AiWeeklyPeriod = {
   until: new Date('2026-11-08T15:00:00Z'),
   prevSince: new Date('2026-10-25T15:00:00Z'),
 };
+
+const noCompany: AiWeeklyCompanyScope = { org: null, pathKeywords: [] };
 
 const child = () => {
   const process = new EventEmitter() as EventEmitter & {
@@ -45,7 +48,10 @@ describe('AiWeeklyMetricsRunner', () => {
 
   it('정상 JSON을 반환하고 격리된 spawn 옵션을 쓴다', async () => {
     const fakeChild = child();
-    const result = new AiWeeklyMetricsRunner().run(period);
+    const result = new AiWeeklyMetricsRunner().run({
+      period,
+      company: noCompany,
+    });
     fakeChild.stdout.write('{"version":1}');
     fakeChild.emit('close', 0);
     await expect(result).resolves.toEqual({ version: 1 });
@@ -64,9 +70,28 @@ describe('AiWeeklyMetricsRunner', () => {
     });
   });
 
+  it('회사 기준은 인자로 넘긴다', async () => {
+    const fakeChild = child();
+    const result = new AiWeeklyMetricsRunner().run({
+      period,
+      company: { org: 'acme-corp', pathKeywords: ['acme-', '-example'] },
+    });
+    fakeChild.stdout.write('{}');
+    fakeChild.emit('close', 0);
+    await result;
+    expect(spawnMock.mock.calls[0][1].slice(-3)).toEqual([
+      '--company-org=acme-corp',
+      '--company-path-keyword=acme-',
+      '--company-path-keyword=-example',
+    ]);
+  });
+
   it('스크립트 오류의 첫 코드만 노출한다', async () => {
     const process = child();
-    const result = new AiWeeklyMetricsRunner().run(period);
+    const result = new AiWeeklyMetricsRunner().run({
+      period,
+      company: noCompany,
+    });
     process.stderr.write('AIWM_ERROR INTERNAL\nPII_MARKER_7f3a');
     process.emit('close', 3);
     await expect(result).rejects.toThrow('exit=3 code=INTERNAL');
@@ -74,7 +99,10 @@ describe('AiWeeklyMetricsRunner', () => {
 
   it('알 수 없는 오류 코드는 UNKNOWN으로 제한한다', async () => {
     const process = child();
-    const result = new AiWeeklyMetricsRunner().run(period);
+    const result = new AiWeeklyMetricsRunner().run({
+      period,
+      company: noCompany,
+    });
     process.stderr.write('AIWM_ERROR FOO_BAR');
     process.emit('close', 3);
     await expect(result).rejects.toThrow('exit=3 code=UNKNOWN');
@@ -82,7 +110,10 @@ describe('AiWeeklyMetricsRunner', () => {
 
   it('잘못된 JSON 원문은 예외 메시지에 넣지 않는다', async () => {
     const process = child();
-    const result = new AiWeeklyMetricsRunner().run(period);
+    const result = new AiWeeklyMetricsRunner().run({
+      period,
+      company: noCompany,
+    });
     process.stdout.write('{bad');
     process.emit('close', 0);
     await expect(result).rejects.toThrow('exit=0 code=BAD_JSON');
@@ -90,7 +121,10 @@ describe('AiWeeklyMetricsRunner', () => {
 
   it('UTF-8 문자가 청크 경계에서 나뉘어도 JSON을 읽는다', async () => {
     const fakeChild = child();
-    const result = new AiWeeklyMetricsRunner().run(period);
+    const result = new AiWeeklyMetricsRunner().run({
+      period,
+      company: noCompany,
+    });
     const encoded = Buffer.from('{"text":"한"}');
     const splitIndex = encoded.indexOf(Buffer.from('한')) + 1;
     fakeChild.stdout.write(encoded.subarray(0, splitIndex));
@@ -101,7 +135,10 @@ describe('AiWeeklyMetricsRunner', () => {
 
   it('stdout 상한을 넘으면 프로세스 그룹을 종료한다', async () => {
     const process = child();
-    const result = new AiWeeklyMetricsRunner().run(period);
+    const result = new AiWeeklyMetricsRunner().run({
+      period,
+      company: noCompany,
+    });
     process.stdout.write('x'.repeat(1_048_577));
     process.emit('close', null);
     await expect(result).rejects.toThrow('code=OUTPUT_TOO_LARGE');
@@ -112,7 +149,10 @@ describe('AiWeeklyMetricsRunner', () => {
     jest.useFakeTimers();
     try {
       const process = child();
-      const result = new AiWeeklyMetricsRunner().run(period);
+      const result = new AiWeeklyMetricsRunner().run({
+        period,
+        company: noCompany,
+      });
       jest.advanceTimersByTime(120_000);
       process.emit('close', null);
       await expect(result).rejects.toThrow('code=TIMEOUT');
@@ -124,9 +164,9 @@ describe('AiWeeklyMetricsRunner', () => {
 
   it('스크립트가 없으면 spawn 전에 SCRIPT_MISSING을 낸다', async () => {
     existsMock.mockReturnValue(false);
-    await expect(new AiWeeklyMetricsRunner().run(period)).rejects.toThrow(
-      'exit=none code=SCRIPT_MISSING',
-    );
+    await expect(
+      new AiWeeklyMetricsRunner().run({ period, company: noCompany }),
+    ).rejects.toThrow('exit=none code=SCRIPT_MISSING');
     expect(spawnMock).not.toHaveBeenCalled();
   });
 });

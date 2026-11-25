@@ -358,6 +358,24 @@ export class EnvironmentVariables {
   })
   AUTOPILOT_HARNESS_TARGET?: string;
 
+  // AI 도구 주간 점검(ai-tool-weekly)이 회사 작업을 가르는 기준. 공개 저장소라 코드에 두지 않는다.
+  // - COMPANY_GITHUB_ORG: 회사 GitHub 조직명. 머지 PR 소유자·세션 레포 remote 를 이 조직과 비교한다.
+  //   미설정 시 회사로 가르지 않는다 — 전부 개인으로 세고 보고서에 "회사 PR 0건" 경고가 뜬다.
+  // - COMPANY_PATH_KEYWORDS: remote 를 못 읽은 세션 경로를 회사로 추정할 키워드(콤마 구분, 대소문자 무시).
+  //   미설정 시 그런 세션은 회사로 추정하지 않는다(~/worktrees 아래면 개인, 그 밖은 미분류).
+  //   조직명이 없으면 키워드도 쓰지 않는다 — 한쪽만 회사로 세면 보고서 안의 회사 수치가 서로 어긋난다.
+  @IsOptional()
+  @ValidateIf((_, value: unknown) => value !== '')
+  @IsString()
+  @Matches(/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/, {
+    message: 'COMPANY_GITHUB_ORG 는 유효한 GitHub 조직명이어야 합니다.',
+  })
+  COMPANY_GITHUB_ORG?: string;
+
+  @IsOptional()
+  @IsString()
+  COMPANY_PATH_KEYWORDS?: string;
+
   @IsOptional()
   @ValidateIf((_, value: unknown) => value !== '')
   @IsString()
@@ -1145,6 +1163,13 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   PR_REVIEW_INLINE_REPOS?: string;
+
+  // 기각에서 학습한 규약을 실을 추가 레포 (콤마 구분 "owner/repo"). 자기 레포는 항상 대상이다.
+  // 미설정/빈 값 → 자기 레포만 학습하고, 스윕 요약의 채택률도 자기 레포만 낸다.
+  // 공개 저장소라 회사 레포 이름을 코드에 두지 않으려고 env 로 뺐다.
+  @IsOptional()
+  @IsString()
+  PR_REVIEW_EXTRA_LEARNING_REPOS?: string;
 
   // 리뷰 모델이 PR head 시점 레포 사본을 읽기 전용으로 열 레포 (콤마 구분 "owner/repo").
   // 미설정/빈 값 → 꺼짐. 켜기 전 레포 tarball 압축 크기 256MB 이하 확인. 변경은 재시작 후 반영.
