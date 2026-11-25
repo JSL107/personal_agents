@@ -128,7 +128,9 @@ const STYLE_RULES = [
   {
     id: 'return-transform',
     severity: Severity.WARN,
-    selector: `ReturnStatement > ${TRANSFORM_CALL}, ReturnStatement > ObjectExpression > Property ${TRANSFORM_CALL}`,
+    // 속성 값이 콜백이면 그 본문은 반환 자리가 아니다. return-call-in-call 처럼 화살표 조상 전체를 빼면
+    // `plans.map((plan) => { return { a: x.find(...) } })` 같은 실제 지적까지 놓치므로 속성 아래 함수만 뺀다.
+    selector: `ReturnStatement > ${TRANSFORM_CALL}, ReturnStatement > ObjectExpression > Property ${TRANSFORM_CALL}:not(ReturnStatement > ObjectExpression > Property ${FUNCTION} *)`,
     message:
       'return 자리에서 배열·문자열을 가공하지 않는다(join·map·some·replace 등) — const 로 받은 뒤 return (CODE_RULES §1-1)',
   },

@@ -110,6 +110,10 @@ describe('check-style-diff', () => {
       'return-expression',
       'const f = () => { return run({ band: ok ? null : 1 }); };',
     ],
+    [
+      'return-transform',
+      'const r = plans.map((plan) => { return { a: list.find((x) => x.ok) }; });',
+    ],
     ['type-assertion', 'const counts = {} as Record<Kind, number>;'],
   ])('%s 를 경고로 잡는다', async (rule, source) => {
     const ids = await lintRules({ source });
@@ -123,6 +127,7 @@ describe('check-style-diff', () => {
       'const b = (rows: Row[]) => { return rows.map(toRecord); };',
       "const KINDS = ['a', 'b'] as const;",
       'const c = value as unknown as Port;',
+      "const d = () => { return { onSelect: () => items.join(',') }; };",
     ].join('\n');
 
     const ids = await lintRules({ source });
