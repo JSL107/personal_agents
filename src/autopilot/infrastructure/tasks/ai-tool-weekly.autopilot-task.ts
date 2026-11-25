@@ -1,6 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import {
+  AiWeeklyCompanyScope,
+  isCompanyRepo,
+  parseAiWeeklyCompanyScope,
+} from '../../../ai-tool-weekly/domain/ai-weekly-company';
 import { parseAiWeeklyMetrics } from '../../../ai-tool-weekly/domain/ai-weekly-metrics.parser';
 import {
   AiWeeklyPeriod,
@@ -38,8 +43,15 @@ export class AiToolWeeklyAutopilotTask implements AutopilotTask {
       return { skip: true };
     }
     const period = resolveAiWeeklyPeriod(context.firedAtKst);
-    const pullRequests = await this.readPullRequests(period);
-    const raw = await this.runner.run(period);
+    const company = parseAiWeeklyCompanyScope({
+      orgRaw: this.configService.get<string>('COMPANY_GITHUB_ORG'),
+      pathKeywordsRaw: this.configService.get<string>('COMPANY_PATH_KEYWORDS'),
+    });
+    if (!company.org) {
+      this.logger.warn('COMPANY_GITHUB_ORG 미설정 — 회사 작업을 가르지 않음');
+    }
+    const pullRequests = await this.readPullRequests(period, company);
+    const raw = await this.runner.run({ period, company });
     const { metrics, droppedNameCount } = parseAiWeeklyMetrics(raw);
     if (droppedNameCount > 0) {
       this.logger.warn(`이름 검증 탈락 ${droppedNameCount}건`);
@@ -54,6 +66,7 @@ export class AiToolWeeklyAutopilotTask implements AutopilotTask {
 
   private async readPullRequests(
     period: AiWeeklyPeriod,
+    companyScope: AiWeeklyCompanyScope,
   ): Promise<AiWeeklyPullRequests> {
     const author = this.configService
       .get<string>('IMPACT_REPORT_GITHUB_AUTHOR')
@@ -73,8 +86,8 @@ export class AiToolWeeklyAutopilotTask implements AutopilotTask {
       const included = results.filter(
         (item) => item.mergedAt && new Date(item.mergedAt) < period.until,
       );
-      const company = included.filter(
-        (item) => item.repo.split('/')[0].toLowerCase() === 'acme-corp',
+      const company = included.filter((item) =>
+        isCompanyRepo({ repo: item.repo, scope: companyScope }),
       ).length;
       return {
         status: 'ok',

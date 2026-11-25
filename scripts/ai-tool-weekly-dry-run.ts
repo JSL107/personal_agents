@@ -1,3 +1,4 @@
+import { parseAiWeeklyCompanyScope } from '../src/ai-tool-weekly/domain/ai-weekly-company';
 import { parseAiWeeklyMetrics } from '../src/ai-tool-weekly/domain/ai-weekly-metrics.parser';
 import { resolveAiWeeklyPeriod } from '../src/ai-tool-weekly/domain/ai-weekly-period';
 import { AiWeeklyMetricsRunner } from '../src/ai-tool-weekly/infrastructure/ai-weekly-metrics.runner';
@@ -11,7 +12,12 @@ const main = async (): Promise<void> => {
     throw new Error('Invalid --fired-at');
   }
   const period = resolveAiWeeklyPeriod(firedAt);
-  const raw = await new AiWeeklyMetricsRunner().run(period);
+  // DI 밖 스크립트라 env 를 직접 읽는다(CODE_RULES §9). `.env` 는 pnpm 스크립트의 --env-file 이 싣는다.
+  const company = parseAiWeeklyCompanyScope({
+    orgRaw: process.env.COMPANY_GITHUB_ORG,
+    pathKeywordsRaw: process.env.COMPANY_PATH_KEYWORDS,
+  });
+  const raw = await new AiWeeklyMetricsRunner().run({ period, company });
   const { metrics } = parseAiWeeklyMetrics(raw);
   const report = formatAiToolWeekly({
     period,

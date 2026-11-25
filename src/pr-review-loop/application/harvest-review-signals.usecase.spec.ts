@@ -8,11 +8,14 @@ import {
   ReviewThread,
 } from '../../github/domain/port/github-client.port';
 import { CodexQuotaExceededException } from '../../model-router/infrastructure/codex-cli.provider';
-import { LEARNING_REPOS } from '../domain/learning-repo';
+import { resolveLearningRepos } from '../domain/learning-repo';
 import { PrReviewFindingRepositoryPort } from '../domain/port/pr-review-finding.repository.port';
 import { PrReviewFindingRecord } from '../domain/pr-review-finding.type';
 import { HarvestReviewSignalsUsecase } from './harvest-review-signals.usecase';
 import { ReviewWriterResolver } from './review-writer.resolver';
+
+// 추가 학습 레포 env 를 주지 않은 기본 설정의 학습 레포(자기 레포만).
+const LEARNING_REPOS = resolveLearningRepos(undefined);
 
 const card = (
   overrides: Partial<PrReviewFindingRecord> = {},
@@ -1534,11 +1537,13 @@ describe('HarvestReviewSignalsUsecase', () => {
   it('학습 레포마다 따로 세고 합산하지 않는다', async () => {
     // 레포마다 다른 값을 돌려준다. 합산하면 TEST 가 40건 한 줄로 나와 spinoff 의 하락이
     // personal_agents 의 만점에 묻힌다 — 학습을 새로 연 레포의 효과를 못 잰다.
-    const { usecase, github, repository } = buildDependencies();
+    const { usecase, github, repository } = buildDependencies({
+      env: { PR_REVIEW_EXTRA_LEARNING_REPOS: 'acme-corp/acme-workspace' },
+    });
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     repository.countAdoptionByCategory.mockImplementation(
       async ({ repo }: { repo: string }) =>
-        repo === 'acme-corp/acme-spinoff-workspace'
+        repo === 'acme-corp/acme-workspace'
           ? [
               { category: 'TEST', status: 'ACKED', count: 14 },
               { category: 'TEST', status: 'REJECTED', count: 6 },
@@ -1563,7 +1568,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     ).toEqual([
       { repo: 'JSL107/personal_agents', total: 20, ratePercent: 100 },
       {
-        repo: 'acme-corp/acme-spinoff-workspace',
+        repo: 'acme-corp/acme-workspace',
         total: 20,
         ratePercent: 70,
       },

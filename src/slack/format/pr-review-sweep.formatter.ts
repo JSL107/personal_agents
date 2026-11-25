@@ -155,7 +155,7 @@ export const formatPrReviewSweep = ({
   // 무슨 뜻인지 되물어 온 표현이다.
   //
   // notable 이 여럿이면 각각 자기 줄에 선다 — 한 줄에 이어 붙이면 고치려던 문제가 그대로 돌아온다.
-  // 레포마다 따로 낸다(`LEARNING_REPOS` 순서). 합쳐서 내면 표본이 큰 레포가 작은 레포의 변화를
+  // 레포마다 따로 낸다(`resolveLearningRepos` 순서). 합쳐서 내면 표본이 큰 레포가 작은 레포의 변화를
   // 덮는다 — 학습을 새로 연 레포의 효과가 바로 그 작은 쪽이다.
   const measuredByRepo = new Map<string, typeof harvest.adoption>();
   for (const item of harvest.adoption) {

@@ -145,7 +145,7 @@ NestJS 11 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 
 **🔁 스스로 배우는 코드 리뷰**
 
-봇이 PR diff 를 읽어 인라인 코멘트로 지적을 달고(`PR_REVIEW_INLINE_REPOS` allowlist — 본인 PR 만. 리뷰 봇 계정을 켜면 `GITHUB_REVIEW_BOT_REPOS` 의 레포는 누가 올린 PR 이든 리뷰한다), 사람이 남긴 👍/👎·답글을 스윕이 수확해 채택/기각을 판정한다. `PR_REVIEW_REPO_READ_REPOS` 에 적은 레포는 리뷰 모델이 PR head 시점 레포 사본(비밀 파일 제외)을 읽기 전용으로 열어 diff 밖 호출부·설정까지 확인한다. 사본 리뷰가 실패하면 같은 회차에 사본 없이 다시 리뷰한다.
+봇이 PR diff 를 읽어 인라인 코멘트로 지적을 달고(`PR_REVIEW_INLINE_REPOS` allowlist — 본인 PR 만. 리뷰 봇 계정을 켜면 `GITHUB_REVIEW_BOT_REPOS` 의 레포는 누가 올린 PR 이든 리뷰한다), 사람이 남긴 👍/👎·답글을 스윕이 수확해 채택/기각을 판정한다. 기각에서 배운 규약은 자기 레포와 `PR_REVIEW_EXTRA_LEARNING_REPOS`(콤마 구분 owner/repo, 비우면 자기 레포만)에 적은 레포에만 싣는다. `PR_REVIEW_REPO_READ_REPOS` 에 적은 레포는 리뷰 모델이 PR head 시점 레포 사본(비밀 파일 제외)을 읽기 전용으로 열어 diff 밖 호출부·설정까지 확인한다. 사본 리뷰가 실패하면 같은 회차에 사본 없이 다시 리뷰한다.
 
 기각된 지적은 자기 저장소에 한해 그 기각 이유가 **규약**이 되어 다음 리뷰의 프롬프트에 실린다(유효기간이 지나면 저절로 빠진다). 예시로 덧붙이기만 하던 이전 방식은 같은 지적이 3연속 기각되고도 계속 나왔다 — 그래서 예시가 아니라 규약이다. 사례를 쌓던 episodic 경로는 읽는 곳이 사라져 걷어냈다.
 
@@ -394,6 +394,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `AUTOPILOT_INVEST_TARGET` | ⭕ | 투자 라인(주식·모의투자 10항목) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `AUTOPILOT_CAREER_TARGET` | ⭕ | 커리어 라인(채용공고 수집·갭 분석) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `AUTOPILOT_HARNESS_TARGET` | ⭕ | AI 도구 주간 점검 전용 채널. 미설정 시 등록하지 않음 |
+| `COMPANY_GITHUB_ORG` · `COMPANY_PATH_KEYWORDS` | ⭕ | AI 도구 주간 점검이 회사 작업을 가르는 조직명과, remote 없는 세션 경로용 키워드(콤마 구분). 조직명 미설정 시 회사로 가르지 않음(전부 개인 + 「회사 PR 0건」 경고) |
 | `AUTOPILOT_REVIEW_TARGET` | ⭕ | 리뷰 라인(PR 리뷰 스윕 요약) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `SAJU_FORTUNE_RECIPIENTS` · `SAJU_FORTUNE_CRON` | ❌ | 매일 사주 운세 DM(사람마다 발송 시각 지정 가능). 받는 사람은 `U123\|이름\|丙寅 辛卯 壬戌 庚子\|07:30\|05-17` 을 `;` 로 잇는다(끝의 양력 생일 칸은 선택 — 생일·설날·새해·8절기엔 특집, 월요일엔 주간 운세가 일일 운세 뒤 한 통으로 더 간다. 스크립트에 `--birthday` 를 주면 채워 준다. 기둥은 `pnpm saju:pillars --date 1990-05-17 --time 14:30 [--lunar] --slack U123 --name 이름` 로 생년월일시에서 뽑는다(인자 없이 실행하면 옵션 안내). 시각 모르면 3개 · 끝의 발송 시각(KST)을 생략하면 `SAJU_FORTUNE_CRON`, 기본 `0 8 * * *`). 실패 알림은 `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` 로 간다 |
 | `SAJU_MISSION_CHECK_CRON` | ❌ | 아침 사주 운세에 붙는 「오늘의 미션」을 했는지 저녁에 버튼 DM 으로 묻는다(KST cron, 기본 `0 21 * * *`). 답한 메시지의 「N월 카드 모음」 버튼은 그달 받은 운세 카드를 한 장으로 모아 보여 준다. `off` 면 저녁 확인을 끈다 |

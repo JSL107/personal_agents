@@ -18,7 +18,7 @@ UNCLEAR = re.compile(r'이해를? 못|무슨 ?말|쉽게 (풀어|설명)|뭔 ?�
 VERIFY = [re.compile(pattern) for pattern in (r'\b(pnpm|npm|yarn|npx|nx)\b[^|;&]*\b(test|jest|vitest|test:e2e|test:int\w*)\b|\bpytest\b|\bswift test\b', r'\b(pnpm|npm|yarn|nx)\b[^|;&]*\bbuild\b|\btsc\b|\bswift build\b', r'\b(pnpm|npm|yarn|nx)\b[^|;&]*\blint\b|\beslint\b', r'\btypecheck\b|check:di|check:invariants')]
 PIPED = re.compile(r'\|\s*(tail|head|grep|sed|awk|cut|wc)\b')
 REVERT = re.compile(r'^Revert "|\brevert\b', re.I)
-COMPANY_REMOTE = re.compile(r'github\.com[^/:]*[:/]acme-corp/', re.I)
+ORG = re.compile(r'^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$')
 NAME = re.compile(r'^[A-Za-z0-9:_.-]{1,80}$')
 MODEL = re.compile(r'^[A-Za-z0-9:_.\[\]-]{1,80}$')
 SCOPES = ('company', 'personal', 'unknown')
@@ -57,7 +57,12 @@ def invoke(command, timeout=10, env=None, raise_timeout=False):
         return None
 
 class Git:
-    def __init__(self):
+    # 회사 판정 기준은 호출자가 넘긴다(공개 저장소라 조직명을 코드에 두지 않는다). 조직명이 없으면
+    # 회사로 가르지 않는다 — 경로 키워드도 함께 끈다(한쪽만 회사로 세면 PR·세션 수치가 어긋난다).
+    # 키워드가 없으면 remote 없는 경로를 회사로 추정하지 않는다.
+    def __init__(self, company_org=None, path_keywords=()):
+        self.company_remote = re.compile(r'github\.com[^/:]*[:/]' + re.escape(company_org) + '/', re.I) if company_org else None
+        self.path_keywords = tuple(keyword.lower() for keyword in path_keywords) if company_org else ()
         self.cache = {}
         self.deadline = time.monotonic() + 60
         self.failed = False
@@ -84,10 +89,10 @@ class Git:
         if not cwd:
             result = ('unknown', False)
         elif remote:
-            result = ('company' if COMPANY_REMOTE.search(remote) else 'personal', False)
+            result = ('company' if self.company_remote and self.company_remote.search(remote) else 'personal', False)
         else:
             lower = cwd.lower() if cwd else ''
-            if any(part in lower for part in ('sbe-', 'acme', 'conduct')):
+            if any(part in lower for part in self.path_keywords):
                 result = ('company', True)
             elif cwd and cwd.startswith(str(Path.home() / 'worktrees') + os.sep):
                 result = ('personal', True)
@@ -373,7 +378,7 @@ def collect(args):
     if since >= until:
         raise BadArgs()
     output = make_output(since, until)
-    git = Git()
+    git = Git(args.company_org, args.company_path_keyword)
     output['sources']['claude'], used, cwd_set = collect_claude(Path(args.claude_dir), since, until, output, git)
     output['sources']['codex'] = collect_codex(Path(args.codex_dir), since, until, output, args.no_zstd, git)
     output['sources']['inventory'] = collect_inventory(Path(args.claude_dir), since, until, used, output)
@@ -412,7 +417,7 @@ def self_check():
         git_fixture('init', str(personal))
         git_fixture('-C', str(personal), 'remote', 'add', 'origin', 'https://github.com/someone/y')
         git_fixture('-C', str(personal), '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'initial')
-        records = [{'type': 'user', 'timestamp': '2026-11-03T00:00:00+09:00', 'cwd': str(root / ('sbe-' + marker)), 'message': {'content': marker + ' 이해 못'}}]
+        records = [{'type': 'user', 'timestamp': '2026-11-03T00:00:00+09:00', 'cwd': str(root / ('acme-' + marker)), 'message': {'content': marker + ' 이해 못'}}]
         records.extend([
             {'type': 'assistant', 'timestamp': '2026-11-03T00:00:00+09:00', 'cwd': str(company), 'message': {'id': 'one', 'model': 'opus', 'usage': {'input_tokens': 5}, 'content': [{'type': 'tool_use', 'name': 'Bash', 'input': {'command': 'pnpm test | tail ' + marker}}, {'type': 'tool_use', 'name': 'Skill', 'input': {'skill': 'a'}}]}},
             {'type': 'assistant', 'timestamp': '2026-11-03T01:00:00+09:00', 'cwd': str(company), 'message': {'id': 'one', 'model': 'opus', 'usage': {'input_tokens': 5}, 'content': [{'type': 'tool_use', 'name': 'Bash', 'input': {'command': 'pnpm build'}}]}},
@@ -420,7 +425,7 @@ def self_check():
         ])
         (projects / 'linked.jsonl').write_text(json.dumps({'type': 'user', 'timestamp': '2026-11-03T00:00:00+09:00', 'cwd': str(linked), 'message': {'content': 'hello'}}), encoding='utf-8')
         (projects / 'unknown.jsonl').write_text(json.dumps({'type': 'assistant', 'timestamp': '2026-11-03T00:00:00+09:00', 'message': {}}), encoding='utf-8')
-        (projects / 'gone.jsonl').write_text(json.dumps({'type': 'assistant', 'timestamp': '2026-11-03T00:00:00+09:00', 'cwd': str(root / 'sbe-gone'), 'message': {}}), encoding='utf-8')
+        (projects / 'gone.jsonl').write_text(json.dumps({'type': 'assistant', 'timestamp': '2026-11-03T00:00:00+09:00', 'cwd': str(root / 'acme-gone'), 'message': {}}), encoding='utf-8')
         (projects / 'personal.jsonl').write_text(json.dumps({'type': 'user', 'timestamp': '2026-11-03T00:00:00+09:00', 'cwd': str(personal), 'message': {'content': 'hello'}}), encoding='utf-8')
         # 커밋이 없는 새 레포: rev-parse 는 되지만 git log HEAD 가 실패한다. 건너뛰어야 한다.
         unborn = root / 'unborn'
@@ -438,7 +443,7 @@ def self_check():
         (projects / 'bad-bytes.jsonl').write_bytes(b'\xff\n')
         (projects / 'bad-string.jsonl').write_bytes(b'{"type":"user","timestamp":"2026-11-03T00:00:00+09:00","message":{"content":"\xff"}}\n')
         (projects / 'test.jsonl').write_text('\n'.join(json.dumps(record) for record in records), encoding='utf-8')
-        args = argparse.Namespace(since='2026-11-02T00:00:00+09:00', until='2026-11-09T00:00:00+09:00', claude_dir=str(root / 'claude'), codex_dir=str(root / 'missing-codex'), hook_audit=str(root / 'missing-audit'), no_zstd=True)
+        args = argparse.Namespace(since='2026-11-02T00:00:00+09:00', until='2026-11-09T00:00:00+09:00', claude_dir=str(root / 'claude'), codex_dir=str(root / 'missing-codex'), hook_audit=str(root / 'missing-audit'), no_zstd=True, company_org='acme-corp', company_path_keyword=['ACME-'])
         result = collect(args)
         assert result['clarify'] == {'humanTurns': 3, 'matched': 1}
         assert result['corrupt'] == 2
@@ -453,6 +458,10 @@ def self_check():
         assert result['scopes']['unknown']['clarify']['humanTurns'] == 0
         assert result['inferredSessions'] == 2
         assert marker not in json.dumps(result)
+        # 회사 기준이 없으면 회사로 가르지 않는다 — remote 는 개인, remote 없는 경로는 추정 안 함.
+        assert Git().scope(str(company)) == ('personal', False)
+        assert Git().scope(str(root / 'acme-gone')) == ('unknown', True)
+        assert Git(None, ['acme-']).scope(str(root / 'acme-gone')) == ('unknown', True)
         codex = root / 'codex' / 'sessions' / '2026' / '11' / '03'
         codex.mkdir(parents=True)
         def token_line(timestamp, total):
@@ -570,8 +579,14 @@ def main(argv):
     parser.add_argument('--codex-dir', default=str(Path.home() / '.codex'))
     parser.add_argument('--hook-audit', default=str(Path.home() / '.claude/scripts/hook-delivery-audit.py'))
     parser.add_argument('--no-zstd', action='store_true')
+    parser.add_argument('--company-org')
+    parser.add_argument('--company-path-keyword', action='append', default=[])
     try:
         args = parser.parse_args(argv)
+        if args.company_org is not None and not ORG.match(args.company_org):
+            raise BadArgs()
+        if any(not keyword.strip() for keyword in args.company_path_keyword):
+            raise BadArgs()
         if args.self_check:
             self_check()
             print('self-check ok')

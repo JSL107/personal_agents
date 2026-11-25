@@ -142,7 +142,7 @@ describe('formatAiToolWeekly', () => {
     ],
     [
       { status: 'ok', company: 0, personal: 3, truncated: false },
-      '조회 권한을 확인해 주세요',
+      '조회 권한과 COMPANY_GITHUB_ORG 설정을 확인해 주세요',
     ],
     [{ status: 'error' }, '• 머지한 PR 조회 실패'],
     [{ status: 'skipped' }, '• 머지한 PR (미리보기라 조회 안 함)'],

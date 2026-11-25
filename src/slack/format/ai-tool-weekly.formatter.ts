@@ -135,7 +135,9 @@ const section = (title: string, lines: string[]): string => {
 const formatResult = ({ metrics, pullRequests }: ResultInput): string => {
   const lines = [describePullRequests(pullRequests), describeReverts(metrics)];
   if (pullRequests.status === 'ok' && pullRequests.company === 0) {
-    lines.push('⚠️ 회사 PR이 0건입니다. 조회 권한을 확인해 주세요');
+    lines.push(
+      '⚠️ 회사 PR이 0건입니다. 조회 권한과 COMPANY_GITHUB_ORG 설정을 확인해 주세요',
+    );
   }
   return section('📦 이번 주 결과', lines);
 };

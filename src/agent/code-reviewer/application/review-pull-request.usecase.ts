@@ -34,6 +34,7 @@ import { ReviewWriterResolver } from '../../../pr-review-loop/application/review
 import {
   isLearningRepo,
   isSelfRepo,
+  resolveLearningRepos,
 } from '../../../pr-review-loop/domain/learning-repo';
 import {
   PR_REVIEW_FINDING_REPOSITORY_PORT,
@@ -861,7 +862,10 @@ export class ReviewPullRequestUsecase {
     // 허용 목록의 레포로 한정한다(`learning-repo.ts`). 채택률 집계와 같은 목록이다 —
     // 둘이 갈리면 규약을 실은 효과를 잴 수 없다. 손으로 적은 규약(`buildRepoConventions`)·
     // diff 밖 맥락(`buildRelatedCode`)은 여전히 자기 레포 전용이다.
-    if (!isLearningRepo(repo)) {
+    const learningRepos = resolveLearningRepos(
+      this.configService?.get<string>('PR_REVIEW_EXTRA_LEARNING_REPOS'),
+    );
+    if (!isLearningRepo({ repo, learningRepos })) {
       return '';
     }
     if (this.findingRepository === undefined) {
