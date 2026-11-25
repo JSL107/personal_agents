@@ -147,7 +147,9 @@ export enum TriggerType {
 // 슬래시(hint)와 별명(nickname)은 분류기를 아예 타지 않으므로 채점 대상이 아닌데,
 // 함께 섞이면 분류기가 실제보다 잘하거나 못하는 것처럼 보인다.
 // memory: 과거 같은 요청의 담당으로 LLM 없이 정한 회차(라우팅 기억 단축).
-export type RoutedVia = 'classifier' | 'hint' | 'nickname' | 'memory';
+export type RoutedVia =
+  // eslint-disable-next-line no-restricted-syntax -- 기존 라우팅 경로 문자열 계약을 확장한다.
+  'classifier' | 'hint' | 'nickname' | 'memory' | 'pattern';
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).
 // caller 가 domain 객체를 그대로 넘기도록 unknown 으로 두고, Prisma 저장 경계에서만 InputJsonValue 로 cast.

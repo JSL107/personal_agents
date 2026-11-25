@@ -377,6 +377,15 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
       '아이디어 채널의 새 글을 판정하고 승인 후 내부 일정을 등록한다',
   },
   {
+    agentType: AgentType.RUN_RETRY,
+    displayName: 'Run Retry',
+    nickname: '재실행',
+    taskLabel: '실행 다시 돌리기',
+    slashCommands: [],
+    usecasePath: 'src/run-replay/infrastructure/run-retry.dispatcher.ts',
+    description: '실행 번호를 지목한 실패·보류 실행의 재시도 (자연어 멘션)',
+  },
+  {
     agentType: AgentType.ROUTER,
     displayName: 'Router',
     // 동료가 아니라 설비다 — 요청을 받아 담당자에게 넘기는 일만 한다. 닉네임으로 불릴 일이

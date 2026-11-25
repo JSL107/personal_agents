@@ -64,6 +64,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ResumeCalibrationCronModule } from './resume-calibration-cron/resume-calibration-cron.module';
 import { RouterModule } from './router/router.module';
 import { SajuFortuneCronModule } from './saju-fortune-cron/saju-fortune-cron.module';
+import { HeldScheduleRegisterApplier } from './schedule/infrastructure/held-schedule-register.applier';
 import { ScheduleModule } from './schedule/schedule.module';
 import { SlackModule } from './slack/slack.module';
 import { SlackCollectorModule } from './slack-collector/slack-collector.module';
@@ -145,6 +146,7 @@ import { WebhookModule } from './webhook/webhook.module';
         EveningCareerReflectApplier,
         ProductGoalApplier,
         IdeaScheduleApplier,
+        HeldScheduleRegisterApplier,
         InstagramReelPublishApplier,
       ],
       // 레버 3b: apply 후 결과 검증 — DOCS_AUDIT_PR 의 PR open 을 getPullRequest 로 재확인.

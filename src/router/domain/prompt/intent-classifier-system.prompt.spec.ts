@@ -17,12 +17,13 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT', () => {
   //           2026-10-30 SCHEDULE 이 직전 대화를 일정으로 옮기는 요청(날짜 없음)도 받는다(아침신문 DM 실사례, eval:classifier 46/46).
   //           2026-11-03 VIDEO_WATCH 가 인스타그램 릴스 링크도 받는다(Slack 릴스 분석 요청 실사례, eval:classifier 47/47).
   //           2026-11-04 SCHEDULE 이 제목을 지목한 상태·알림·연락·메모 지시도 받는다(캘린더 업무 트래킹, eval:classifier 53/53).
+  //           2026-11-25 RUN_RETRY 가 실행 번호를 지목한 재실행 요청을 받는다.
   it('분류기 프롬프트 지문이 마지막으로 잰 값과 같다 — 바꾸면 분류 eval 을 다시 잰다', () => {
     expect(
       createHash('sha256')
         .update(INTENT_CLASSIFIER_SYSTEM_PROMPT)
         .digest('hex'),
-    ).toBe('ae0e58d7aaf9075cc60a1958984e8719a19d160990fdd024ce752e469d3ec0d8');
+    ).toBe('eb03d894584ed16d164cd80c887b60b6413a14f72243160b82f15f4bcb22d4b0');
   });
 
   it('SCHEDULE 후보가 분류 표에 있다', () => {

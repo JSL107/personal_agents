@@ -2,6 +2,7 @@
 // kind 는 preview 의 의미 종류 — PreviewApplier strategy 가 같은 kind 를 implement 해 실제 부작용을 수행한다.
 export const PREVIEW_KIND = {
   IDEA_SCHEDULE: 'IDEA_SCHEDULE',
+  HELD_SCHEDULE_REGISTER: 'HELD_SCHEDULE_REGISTER',
   STUDY_APPLY_ISSUE: 'STUDY_APPLY_ISSUE',
   // PM-2: PM Agent 가 만든 DailyPlan 의 task subtasks 를 GitHub Issue 코멘트 / Notion page 로 write-back.
   PM_WRITE_BACK: 'PM_WRITE_BACK',
@@ -80,6 +81,7 @@ export const PREVIEW_ANSWER_AMBIGUOUS_TEXT =
 // Slack 멘션(router-message)과 콘솔 채팅(precondition-chain) 두 경로가 이 집합을 함께 본다.
 export const BUTTON_ONLY_APPROVAL_KINDS: ReadonlySet<PreviewKind> = new Set([
   PREVIEW_KIND.INSTAGRAM_REEL_PUBLISH,
+  PREVIEW_KIND.HELD_SCHEDULE_REGISTER,
 ]);
 
 export const BUTTON_ONLY_APPROVAL_TEXT =

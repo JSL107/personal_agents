@@ -11,15 +11,21 @@ import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
 import { VideoWatchModule } from '../agent/video-watch/video-watch.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
+import { HumanizeModule } from '../humanize/humanize.module';
 import { PaperTradingModule } from '../paper-trading/paper-trading.module';
+import { PreviewGateModule } from '../preview-gate/preview-gate.module';
+import { ReplayReplyRunner } from '../slack/format/replay-reply.runner';
 import { ReplayFailedRunUsecase } from './application/replay-failed-run.usecase';
 import { ReplayInFlightLock } from './application/replay-in-flight.lock';
+import { RunRetryDispatcher } from './infrastructure/run-retry.dispatcher';
 
 // 실패 실행 재실행 — Slack `/retry-run` 과 콘솔 재시도 버튼이 함께 쓴다.
 // AgentRunModule 은 각 에이전트 모듈이 가져다 쓰는 하위 모듈이라 거기 두면 순환이 생겨 따로 뺐다.
 @Module({
   imports: [
     AgentRunModule,
+    HumanizeModule,
+    PreviewGateModule,
     BlogModule,
     CeoModule,
     CodeReviewerModule,
@@ -32,7 +38,12 @@ import { ReplayInFlightLock } from './application/replay-in-flight.lock';
     VideoWatchModule,
     WorkReviewerModule,
   ],
-  providers: [ReplayFailedRunUsecase, ReplayInFlightLock],
-  exports: [ReplayFailedRunUsecase],
+  providers: [
+    ReplayFailedRunUsecase,
+    ReplayInFlightLock,
+    ReplayReplyRunner,
+    RunRetryDispatcher,
+  ],
+  exports: [ReplayFailedRunUsecase, ReplayReplyRunner, RunRetryDispatcher],
 })
 export class RunReplayModule {}

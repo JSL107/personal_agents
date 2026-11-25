@@ -181,7 +181,8 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
         // 외부 기록 경계 안내를 system prompt 에 추가했다.
         // 2026-10-30 일반 경로의 금지 문장 묶음을 「답의 원칙」 세 줄로 줄였다(eval holdout 27문항×2 25/27 = 정리 전, 흔들린 5문항×3 13/15 > 정리 전 9/15)
         // 2026-11-03 VIDEO_WATCH 기능 안내에 인스타그램 릴스 추가
-        '3cf9a779fbb85184b7ec320852c03a24650d5f683c0113fdf20c510bab86fe03',
+        // 2026-11-25 RUN_RETRY 자연어 재실행 기능 안내 추가
+        'f46d8bbf28e9b4cc432808dba4610473610ae662a52a5ee1fc13d4da3d4e1ca7',
       );
     },
   );
