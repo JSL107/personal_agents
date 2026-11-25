@@ -582,7 +582,7 @@ describe('ScheduleDispatcher', () => {
           role: 'user',
           text: '오늘 자동차세 등록해줘',
           agentType: AgentType.SCHEDULE,
-          agentRunId: null,
+          agentRunId: 14038,
           timestampMs: 1,
         },
       ],
@@ -590,6 +590,42 @@ describe('ScheduleDispatcher', () => {
 
     expect(usecase.execute).not.toHaveBeenCalled();
     expect(outcome.output).toMatchObject({ kind: 'NEEDS_DATE' });
+  });
+
+  it('대화 추출이 실패해 제목을 되물은 직전 턴의 날짜는 제목 답과 합쳐 등록한다', async () => {
+    const usecase = createUsecase();
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      createAnswer(),
+      createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
+    );
+
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '자동차세',
+      priorTurns: [
+        {
+          role: 'user',
+          text: '오늘 그거 등록해줘',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: 0,
+          timestampMs: 1,
+        },
+        {
+          role: 'assistant',
+          text: '직전 대화 내용을 읽지 못했어요. 제목을 알려 주세요.',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: 0,
+          timestampMs: 2,
+        },
+      ],
+    });
+
+    expect(usecase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '자동차세' }),
+    );
   });
 
   it('직전 턴이 다른 워커면 합치지 않는다 — 남의 대화를 제목으로 끌어오지 않는다', async () => {
