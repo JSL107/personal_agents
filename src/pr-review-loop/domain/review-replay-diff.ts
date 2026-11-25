@@ -1,7 +1,6 @@
 import {
   DiffLineKind,
   isChangedLine,
-  parseHeaderPath,
   scanDiffLines,
 } from '../../agent/code-reviewer/domain/diff-added-lines';
 
@@ -18,59 +17,28 @@ export interface DiffSummary {
   deletions: number;
 }
 
+// 삭제된 파일(`+++ /dev/null`)은 scanDiffLines 가 변경 전 경로로 이름 붙인다 — 목록에서 빠지지 않는다.
 export const summarizeDiff = (diff: string): DiffSummary => {
-  const changedFiles: string[] = [];
-  const changedLinesByFile: Record<string, number> = {};
-  let current: string | undefined;
-  let additions = 0;
-  let deletions = 0;
-  // 삭제된 파일은 `--- a/경로` 다음에 `+++ /dev/null` 이 온다 — 새 경로만 모으면 그 파일이 목록에서 빠진다.
-  let removedPath: string | undefined;
-  for (const scanned of scanDiffLines(diff)) {
-    const line = scanned.raw;
-    if (isChangedLine(scanned)) {
-      if (scanned.kind === DiffLineKind.ADDED) {
-        additions += 1;
-      } else {
-        deletions += 1;
-      }
-      if (current !== undefined) {
-        changedLinesByFile[current] += 1;
-      }
-      continue;
-    }
-    const oldPath = parseHeaderPath(line, '--- a/');
-    if (oldPath !== undefined) {
-      removedPath = oldPath;
-      continue;
-    }
-    const newPath = parseHeaderPath(line, '+++ b/');
-    if (newPath !== undefined) {
-      current = newPath;
-      changedFiles.push(current);
-      changedLinesByFile[current] = 0;
-      removedPath = undefined;
-      continue;
-    }
-    if (line.startsWith('+++ /dev/null')) {
-      if (removedPath !== undefined) {
-        current = removedPath;
-        changedFiles.push(current);
-        changedLinesByFile[current] = 0;
-        removedPath = undefined;
-      }
-      continue;
-    }
-    if (line.startsWith('+++') || line.startsWith('---')) {
-      removedPath = undefined;
-    }
-  }
+  const lines = scanDiffLines(diff);
+  const changedFiles = lines.flatMap(({ kind, file }) =>
+    kind === DiffLineKind.FILE && file !== undefined ? [file] : [],
+  );
+  const changed = lines.filter(isChangedLine);
+  const additions = changed.filter(
+    ({ kind }) => kind === DiffLineKind.ADDED,
+  ).length;
+  const changedLinesByFile = Object.fromEntries(
+    changedFiles.map((path) => [
+      path,
+      changed.filter(({ file }) => file === path).length,
+    ]),
+  );
   return {
     changedFiles,
     changedFilesTotalCount: changedFiles.length,
     changedFilesTruncated: false,
     changedLinesByFile,
     additions,
-    deletions,
+    deletions: changed.length - additions,
   };
 };
