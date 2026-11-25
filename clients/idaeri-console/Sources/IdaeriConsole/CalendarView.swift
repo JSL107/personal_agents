@@ -12,6 +12,10 @@ struct CalendarView: View {
     /// 연결 실패 안내에 띄울 백엔드 주소. 어디에 못 붙었는지가 없으면 "실행했는지 확인하라"는
     /// 말이 어느 주소를 두고 하는 말인지 알 수 없다(`AppRootView.approvalFailureReason` 과 같다).
     let baseURLLabel: String
+    /// 백엔드 연결 상태. 앱과 백엔드를 함께 띄우면(`pnpm dev`) 첫 조회가 부팅 전 백엔드에
+    /// 닿아 실패하고, 탭이 처음 나타날 때 한 번만 조회하므로 그대로 비어 있었다 —
+    /// 연결이 살아나는 순간 다시 읽는다.
+    let connection: ConnectionStatus
 
     @State private var year: Int
     @State private var month: Int
@@ -54,6 +58,7 @@ struct CalendarView: View {
         store: ConsoleStore,
         client: ConsoleClient,
         baseURLLabel: String,
+        connection: ConnectionStatus = .live,
         initialYear: Int? = nil,
         initialMonth: Int? = nil,
         initialSelectedDay: Int? = nil,
@@ -64,6 +69,7 @@ struct CalendarView: View {
         self.store = store
         self.client = client
         self.baseURLLabel = baseURLLabel
+        self.connection = connection
         let now = Calendar(identifier: .gregorian)
         let resolvedYear = initialYear ?? now.component(.year, from: Date())
         let resolvedMonth = initialMonth ?? now.component(.month, from: Date())
@@ -258,6 +264,23 @@ struct CalendarView: View {
         .task {
             await reload()
             await reloadUndated()
+        }
+        .onChange(of: connection) { connection in
+            guard connection == .live else {
+                return
+            }
+            Task {
+                await reload()
+                await reloadUndated()
+            }
+        }
+        // 일정은 SSE 에 실리지 않아 Slack 등 콘솔 밖에서 바뀐 것은 다시 읽어야 보인다.
+        // 다른 앱을 보다가 돌아오는 순간이 사용자가 확인하러 오는 때다.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task {
+                await reload()
+                await reloadUndated()
+            }
         }
         // 자정을 넘기면 오늘이 바뀐다. 타이머로 재는 대신 시스템이 알려 주는 것을 받는다 —
         // 타이머는 절전·시간대 변경·시각 수동 조정에서 어긋난다.
