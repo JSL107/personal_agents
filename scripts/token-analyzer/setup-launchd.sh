@@ -11,7 +11,8 @@ NODE="$(command -v node)"
 LA="$HOME/Library/LaunchAgents"
 PORT="${FINLENS_PORT:-8091}"
 # 사이드 클론 병합표(클론=본체,...). 설치 시점 셸 값을 plist 에 굳힌다 — 바꾸면 재설치.
-ALIASES="${FINLENS_PROJECT_ALIASES:-}"
+# plist 는 XML 이라 &·<·> 를 이스케이프해야 파일이 깨지지 않는다(폴더 이름에는 & 가 올 수 있다).
+ALIASES="$(printf '%s' "${FINLENS_PROJECT_ALIASES:-}" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')"
 SRV_LABEL="com.finlens.server"
 REF_LABEL="com.finlens.refresh"
 SRV_PLIST="$LA/$SRV_LABEL.plist"

@@ -35,6 +35,12 @@ describe('resolveLearningRepos', () => {
       ),
     ).toEqual([SELF_REPO, 'acme-corp/acme-workspace']);
   });
+
+  it('표기만 다른 중복 레포는 한 번만 넣는다', () => {
+    expect(
+      resolveLearningRepos('acme-corp/acme-workspace,Acme-Corp/Acme-Workspace'),
+    ).toEqual([SELF_REPO, 'acme-corp/acme-workspace']);
+  });
 });
 
 describe('isLearningRepo', () => {

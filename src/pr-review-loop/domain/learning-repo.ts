@@ -30,11 +30,18 @@ export const SELF_REPO = 'JSL107/personal_agents';
 export const resolveLearningRepos = (
   extraRaw: string | undefined,
 ): readonly string[] => {
-  const extra = (extraRaw ?? '')
-    .split(',')
-    .map((repo) => repo.trim())
-    .filter((repo) => repo.length > 0 && !isSelfRepo(repo));
-  return [SELF_REPO, ...extra];
+  const learningRepos: string[] = [SELF_REPO];
+  // 같은 레포가 두 번 들어가면 채택률 집계가 레포마다 돌아 같은 분류를 두 번 보고한다.
+  for (const raw of (extraRaw ?? '').split(',')) {
+    const repo = raw.trim();
+    const found = learningRepos.some((learningRepo) =>
+      sameRepo(learningRepo, repo),
+    );
+    if (repo.length > 0 && !found) {
+      learningRepos.push(repo);
+    }
+  }
+  return learningRepos;
 };
 
 /** 대소문자·공백 차이를 흡수해 비교한다. GitHub 레포 이름은 대소문자를 구분하지 않는다. */
