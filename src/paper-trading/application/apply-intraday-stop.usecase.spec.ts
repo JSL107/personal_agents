@@ -65,6 +65,7 @@ const createFixture = () => {
     findPositionsWithTicker: jest
       .fn()
       .mockResolvedValue([position(21, '005930')]),
+    findDelistedPositions: jest.fn().mockResolvedValue([]),
     createExitBandOrders: jest.fn().mockResolvedValue({
       created: 1,
       createdTickerIds: [21],
@@ -155,6 +156,34 @@ describe('ApplyIntradayStopUsecase', () => {
     });
     expect(repository.findAllAccounts).not.toHaveBeenCalled();
     expect(marketData.fetchDailyBars).not.toHaveBeenCalled();
+  });
+
+  // 폐지 종목은 공급자에 없어 회차마다 조회 실패가 카드에 찍혔다(2026-11-25 417310 실측).
+  it('상장폐지 종목은 시세를 조회하지 않고 판정에서 뺀다', async () => {
+    const { usecase, repository, marketData } = createFixture();
+    repository.findPositionsWithTicker.mockResolvedValue([
+      position(21, '005930'),
+      position(178, '417310'),
+    ]);
+    repository.findDelistedPositions.mockResolvedValue([{ tickerId: 178 }]);
+    jest
+      .mocked(marketData.fetchDailyBars)
+      .mockResolvedValue([dailyBar('2026-08-25', '102')]);
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-25T01:00:00.000Z'),
+    });
+
+    expect(repository.findDelistedPositions).toHaveBeenCalledWith({
+      accountId: 11,
+      onOrBefore: new Date('2026-08-25T00:00:00.000Z'),
+    });
+    expect(marketData.fetchDailyBars).toHaveBeenCalledTimes(1);
+    expect(marketData.fetchDailyBars).toHaveBeenCalledWith('005930', 2, {
+      adjusted: false,
+    });
+    expect(result.priceErrorCount).toBe(0);
+    expect(result.inspectedCount).toBe(1);
   });
 
   it('보유 2종 중 -6%인 1종만 주문을 만들고 판정가로 즉시 체결한다', async () => {

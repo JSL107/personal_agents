@@ -14,6 +14,7 @@ import {
   ExitBandThreshold,
 } from '../domain/exit-band';
 import {
+  DELISTED_LIQUIDATION_REASON_PREFIX,
   OrderStatus,
   PaperMarket,
   TradeSide,
@@ -58,6 +59,38 @@ export interface PaperPositionWithTicker extends PaperPositionRecord {
     name: string;
     tossSymbol: string;
   };
+}
+
+export interface FindDelistedPositionsInput {
+  accountId: number;
+  onOrBefore: Date;
+}
+
+export interface ExpirePendingOrdersForTickersInput {
+  accountId: number;
+  tickerIds: number[];
+  statusReason: string;
+}
+
+export interface DelistedLiquidationTradeRecord {
+  accountName: string;
+  tickerCode: string;
+  tickerName: string;
+  quantity: string;
+  price: string;
+}
+
+// 상장폐지된 종목의 보유분. 폐지 뒤에는 시세 공급자가 봉을 주지 않으므로 청산가의 근거는
+// 우리가 마지막으로 적재한 종가뿐이다 — 그것도 없으면 lastClose 가 null 이다.
+export interface DelistedPositionRecord {
+  tickerId: number;
+  tickerCode: string;
+  tickerName: string;
+  krxMarket: string | null;
+  quantity: Prisma.Decimal;
+  delistedAt: Date;
+  lastClose: Prisma.Decimal | null;
+  lastCloseDate: Date | null;
 }
 
 export interface ApplyTradeInput {
@@ -268,7 +301,8 @@ export interface CreateExitBandOrdersInput {
   targetTradeDate: Date;
   agentRunId: number | null;
   // 이 회차가 쓴 밴드 설정. 주문마다 박아 둬야 값을 바꾼 전후 성적을 갈라 볼 수 있다.
-  threshold: ExitBandThreshold;
+  // 밴드가 아닌 매도(상장폐지 청산)는 null — 밴드 값을 박으면 성적 집계가 밴드 청산으로 센다.
+  threshold: ExitBandThreshold | null;
   orders: ExitBandOrderInput[];
 }
 
@@ -1067,6 +1101,41 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
     });
   }
 
+  async findDelistedPositions({
+    accountId,
+    onOrBefore,
+  }: FindDelistedPositionsInput): Promise<DelistedPositionRecord[]> {
+    const positions = await this.prisma.paperPosition.findMany({
+      where: {
+        accountId,
+        quantity: { gt: 0 },
+        ticker: { delistedAt: { lte: onOrBefore } },
+      },
+      include: { ticker: true },
+      orderBy: { tickerId: 'asc' },
+    });
+    const records: DelistedPositionRecord[] = [];
+    for (const position of positions) {
+      const latest = await this.prisma.dailyPrice.findFirst({
+        where: { tickerId: position.tickerId, tradeDate: { lte: onOrBefore } },
+        select: { close: true, tradeDate: true },
+        orderBy: { tradeDate: 'desc' },
+      });
+      records.push({
+        tickerId: position.tickerId,
+        tickerCode: position.ticker.code,
+        tickerName: position.ticker.name,
+        krxMarket: position.ticker.krxMarket,
+        quantity: position.quantity,
+        // where 가 delistedAt 을 걸렀으므로 null 일 수 없다.
+        delistedAt: position.ticker.delistedAt!,
+        lastClose: latest?.close ?? null,
+        lastCloseDate: latest?.tradeDate ?? null,
+      });
+    }
+    return records;
+  }
+
   async applyTradeAtomically(
     input: ApplyTradeInput,
   ): Promise<ApplyTradeResult> {
@@ -1666,8 +1735,8 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
             targetTradeDate: input.targetTradeDate,
             status: 'PENDING',
             agentRunId: input.agentRunId,
-            exitTakeProfitPercent: input.threshold.takeProfitPercent,
-            exitStopLossPercent: input.threshold.stopLossPercent,
+            exitTakeProfitPercent: input.threshold?.takeProfitPercent ?? null,
+            exitStopLossPercent: input.threshold?.stopLossPercent ?? null,
           },
         ];
       });
@@ -2045,6 +2114,43 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
       data: { status: 'EXPIRED', statusReason },
     });
     return result.count === 1;
+  }
+
+  // 목표일·방향과 무관하게 지운다. 폐지 청산이 기존 주문을 재사용하면 일부 수량만 팔거나
+  // 밴드 성적으로 잘못 집계되고, 남은 매수는 시가가 없는 종목을 계속 기다린다.
+  async expirePendingOrdersForTickers({
+    accountId,
+    tickerIds,
+    statusReason,
+  }: ExpirePendingOrdersForTickersInput): Promise<number> {
+    const result = await this.prisma.paperOrder.updateMany({
+      where: { accountId, tickerId: { in: tickerIds }, status: 'PENDING' },
+      data: { status: 'EXPIRED', statusReason },
+    });
+    return result.count;
+  }
+
+  // 그날 체결된 폐지 청산. 평가 실패로 재시도된 회차는 보유가 이미 0 이라 청산을 다시 하지
+  // 않으므로, 카드는 이번 실행의 결과가 아니라 원장에서 읽어야 청산 사실이 남는다.
+  async findDelistedLiquidationTrades(
+    tradeDate: Date,
+  ): Promise<DelistedLiquidationTradeRecord[]> {
+    const trades = await this.prisma.paperTrade.findMany({
+      where: {
+        tradeDate,
+        side: 'SELL',
+        order: { reason: { startsWith: DELISTED_LIQUIDATION_REASON_PREFIX } },
+      },
+      include: { account: true, ticker: true },
+      orderBy: { id: 'asc' },
+    });
+    return trades.map((trade) => ({
+      accountName: trade.account.name,
+      tickerCode: trade.ticker.code,
+      tickerName: trade.ticker.name,
+      quantity: trade.quantity.toString(),
+      price: trade.price.toString(),
+    }));
   }
 
   async expireDuePendingOrders(
