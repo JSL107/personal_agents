@@ -15,6 +15,10 @@ const Severity = Object.freeze({ ERROR: 'ERROR', WARN: 'WARN' });
 
 const FUNCTION =
   ':matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression)';
+// 배열·문자열 가공 호출 — `return repository.find({ id })` 같은 협력자 위임과 가르려고, 콜백형 메서드는
+// 함수 리터럴을 넘길 때만 본다. `rows.map(toRow)` 처럼 이름 붙인 함수를 넘기는 것은 권하는 모양이다.
+const TRANSFORM_CALL =
+  ':matches(CallExpression[callee.property.name=/^(map|flatMap|filter|some|every|find|findIndex|reduce|sort)$/][arguments.0.type=/^(ArrowFunctionExpression|FunctionExpression)$/], CallExpression[callee.property.name=/^(join|slice|replace|replaceAll|split|trim|includes|concat)$/])';
 // 프레임워크 인터페이스가 인자 순서를 강제하는 메서드 (CODE_RULES §3-11 예외).
 const POSITIONAL_EXEMPT_METHODS = '/^(catch|intercept|transform|use)$/';
 
@@ -120,6 +124,32 @@ const STYLE_RULES = [
       'ReturnStatement > CallExpression CallExpression:not(ArrowFunctionExpression CallExpression)',
     message:
       'return 하는 호출의 인자 안에서 다시 계산하지 않는다 — const 로 먼저 받는다 (CODE_RULES §1-1)',
+  },
+  {
+    id: 'return-transform',
+    severity: Severity.WARN,
+    // 속성 값이 콜백이면 그 본문은 반환 자리가 아니다. return-call-in-call 처럼 화살표 조상 전체를 빼면
+    // `plans.map((plan) => { return { a: x.find(...) } })` 같은 실제 지적까지 놓치므로 속성 아래 함수만 뺀다.
+    selector: `ReturnStatement > ${TRANSFORM_CALL}, ReturnStatement > ObjectExpression > Property ${TRANSFORM_CALL}:not(ReturnStatement > ObjectExpression > Property ${FUNCTION} *)`,
+    message:
+      'return 자리에서 배열·문자열을 가공하지 않는다(join·map·some·replace 등) — const 로 받은 뒤 return (CODE_RULES §1-1)',
+  },
+  {
+    id: 'return-expression',
+    severity: Severity.WARN,
+    selector:
+      'ReturnStatement > BinaryExpression[operator=/^[-+*\\/%]$/], ReturnStatement > ObjectExpression > Property > BinaryExpression.value, ReturnStatement > CallExpression > ObjectExpression > Property > ConditionalExpression.value',
+    message:
+      'return 자리에서 계산·비교·분기하지 않는다 — 이름 붙인 const 로 받은 뒤 return (CODE_RULES §1-1)',
+  },
+  {
+    id: 'type-assertion',
+    severity: Severity.WARN,
+    // `as unknown as T` 는 한 번만 센다.
+    selector:
+      "TSAsExpression:not([typeAnnotation.typeName.name='const']):not(TSAsExpression > TSAsExpression.expression), TSTypeAssertion",
+    message:
+      '타입 단언(as)이 꼭 필요한지 — 타입 선언·enum·좁히기 함수로 풀 수 있으면 단언을 없앤다',
   },
   {
     id: 'ternary-call-branch',
@@ -251,7 +281,16 @@ const lintSource = async ({ linter, root, file, source, lines }) => {
       line: message.line,
       rule: RULE_BY_ID.get(message.message),
     }))
-    .filter((violation) => !violation.rule.skipFile?.(file));
+    .filter((violation) => !violation.rule.skipFile?.(file))
+    // 한 줄의 `.map(...).join(...)` 처럼 같은 규칙이 한 줄에 여러 노드로 걸려도 한 번만 알린다.
+    .filter(
+      (violation, index, all) =>
+        all.findIndex(
+          (other) =>
+            other.line === violation.line &&
+            other.rule.id === violation.rule.id,
+        ) === index,
+    );
 };
 
 const git = ({ root, args }) =>
