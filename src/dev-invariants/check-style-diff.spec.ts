@@ -88,6 +88,48 @@ describe('check-style-diff', () => {
     expect(ids).toContain(rule);
   });
 
+  it.each([
+    [
+      'return-transform',
+      "const f = (lines: string[]) => { return lines.join('\\n'); };",
+    ],
+    [
+      'return-transform',
+      'const f = (turns: Turn[]) => { return turns.some((turn) => turn.ok); };',
+    ],
+    [
+      'return-transform',
+      'const f = (s: State) => { return { content: s.content.replace(a, b) }; };',
+    ],
+    ['return-expression', 'const f = ({ a, b }: Pair) => { return a / b; };'],
+    [
+      'return-expression',
+      'const f = (failed: string[]) => { return { pass: failed.length === 0 }; };',
+    ],
+    [
+      'return-expression',
+      'const f = () => { return run({ band: ok ? null : 1 }); };',
+    ],
+    ['type-assertion', 'const counts = {} as Record<Kind, number>;'],
+  ])('%s 를 경고로 잡는다', async (rule, source) => {
+    const ids = await lintRules({ source });
+
+    expect(ids).toContain(rule);
+  });
+
+  it('협력자 위임·이름 붙인 함수 넘기기·as const 는 잡지 않고, as unknown as 는 한 번만 센다', async () => {
+    const source = [
+      'const a = () => { return repository.find({ id: 1 }); };',
+      'const b = (rows: Row[]) => { return rows.map(toRecord); };',
+      "const KINDS = ['a', 'b'] as const;",
+      'const c = value as unknown as Port;',
+    ].join('\n');
+
+    const ids = await lintRules({ source });
+
+    expect(ids).toEqual(['type-assertion']);
+  });
+
   it('return 삼항은 조건식에만 호출이 있고 갈래가 값 참조뿐이면 잡지 않는다 (CODE_RULES §1-1)', async () => {
     const source =
       'const f = () => { return isBlogCategoryId(normalized) ? normalized : undefined; };';
