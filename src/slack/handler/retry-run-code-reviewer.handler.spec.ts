@@ -1,5 +1,6 @@
 import { App } from '@slack/bolt';
 
+import { ReplayReplyRunner } from '../format/replay-reply.runner';
 import { RetryRunHandler } from './retry-run.handler';
 
 type RetryCallback = (input: {
@@ -36,7 +37,7 @@ describe('RetryRunHandler CODE_REVIEWER', () => {
           run,
         }),
       } as never,
-      {} as never,
+      new ReplayReplyRunner({} as never),
     );
     const callbacks = new Map<string, RetryCallback>();
     const app = {
