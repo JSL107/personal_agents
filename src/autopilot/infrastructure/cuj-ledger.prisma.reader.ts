@@ -28,6 +28,7 @@ const ROUTED_VIA: Record<RoutedVia, true> = {
   hint: true,
   nickname: true,
   memory: true,
+  pattern: true,
 };
 
 const isRecordValue = (value: unknown): value is Record<string, unknown> =>

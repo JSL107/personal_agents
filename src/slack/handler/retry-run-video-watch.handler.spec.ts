@@ -4,6 +4,7 @@ import { extractVideoRequest } from '../../agent/video-watch/domain/video-url.pa
 import { HumanizeService } from '../../humanize/application/humanize.service';
 import { ReplayFailedRunUsecase } from '../../run-replay/application/replay-failed-run.usecase';
 import { ReplayInFlightLock } from '../../run-replay/application/replay-in-flight.lock';
+import { ReplayReplyRunner } from '../format/replay-reply.runner';
 import { RetryRunHandler } from './retry-run.handler';
 
 type RetryCallback = (input: {
@@ -47,7 +48,7 @@ const setup = (inputSnapshot: Record<string, unknown>) => {
   ) as ReplayFailedRunUsecase;
   const handler = new RetryRunHandler(
     replayFailedRunUsecase,
-    {} as HumanizeService,
+    new ReplayReplyRunner({} as HumanizeService),
   );
   const callbacks = new Map<string, RetryCallback>();
   handler.register({

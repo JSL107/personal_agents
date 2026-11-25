@@ -334,6 +334,10 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     Department.INTERNAL_OPS,
     '마감·신청·예약을 날짜와 함께 등록하고 상태를 관리한다',
   ),
+  [AgentType.RUN_RETRY]: stub(
+    Department.INTERNAL_OPS,
+    '실행 번호를 지목한 실패·보류 실행의 재시도를 판정한다',
+  ),
   [AgentType.IDEA_TRIAGE]: stub(
     Department.PLANNING,
     '아이디어의 개발 가치를 판정하고 일정 후보를 제안한다',

@@ -3,6 +3,7 @@ import { App } from '@slack/bolt';
 import { HumanizeService } from '../../humanize/application/humanize.service';
 import { ReplayFailedRunUsecase } from '../../run-replay/application/replay-failed-run.usecase';
 import { ReplayInFlightLock } from '../../run-replay/application/replay-in-flight.lock';
+import { ReplayReplyRunner } from '../format/replay-reply.runner';
 import { RetryRunHandler } from './retry-run.handler';
 
 type RetryCallback = (input: {
@@ -55,7 +56,7 @@ describe('RetryRunHandler BLOG_PUBLISH', () => {
     ) as ReplayFailedRunUsecase;
     const handler = new RetryRunHandler(
       replayFailedRunUsecase,
-      {} as HumanizeService,
+      new ReplayReplyRunner({} as HumanizeService),
     );
     const callbacks = new Map<string, RetryCallback>();
     const app = {

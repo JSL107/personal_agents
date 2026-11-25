@@ -10,6 +10,7 @@ import { ConversationTurn } from '../domain/conversation-memory.type';
 // 2026-10-16 기록: #852 수정 전 43/44, 수정 후 44/44 (각 2회).
 // 2026-10-30: 직전 대화를 일정으로 옮기는 요청 2문항(실사례·대조군)을 더했다 — SCHEDULE 정의 보강.
 // 2026-11-03: 제목을 지목한 업무 관리 지시 5문항과 진행 질문 대조군 1문항을 더했다 — 캘린더 업무 트래킹.
+// 2026-11-25: 실행 번호를 지목한 재실행 요청과 사용법 질문 대조군을 더했다.
 // 새 워커를 넣으면 그 워커의 대표 문장과 함께 "그 기능을 어떻게 쓰는지 묻는 질문"을 대조군으로 넣는다 —
 // #852 는 방법 질문이 새 워커의 명령으로 끌려간 사례다.
 
@@ -74,6 +75,11 @@ export const INTENT_CLASSIFIER_EVAL_CASES: readonly IntentClassifierEvalCase[] =
       id: 'schedule-list',
       text: '다음주 마감 뭐 있어?',
       accept: [AgentType.SCHEDULE],
+    },
+    {
+      id: 'run-retry-by-number',
+      text: '실행번호 14034에 대해서 다시 해봐.',
+      accept: [AgentType.RUN_RETRY],
     },
     {
       id: 'work-reviewer',
@@ -200,6 +206,11 @@ export const INTENT_CLASSIFIER_EVAL_CASES: readonly IntentClassifierEvalCase[] =
       accept: ['UNKNOWN'],
     },
     { id: 'unknown-study', text: '공부하고 싶어', accept: ['UNKNOWN'] },
+    {
+      id: 'unknown-run-retry-howto',
+      text: '실행 번호를 다시 돌리는 방법 알려줘',
+      accept: ['UNKNOWN'],
+    },
     // 모의투자는 조회 전용 — 매수 추천은 맡을 워커가 없다.
     {
       id: 'unknown-buy',

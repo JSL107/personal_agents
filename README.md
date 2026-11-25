@@ -124,7 +124,7 @@ NestJS 11 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 
 **🔀 자연어 라우터 (V3 Hierarchical Manager)**
 
-멘션 하나가 워커에 닿기까지 LLM 호출은 한 번뿐이다. Intent Classifier 가 의도를 분류해 등록된 워커 중 하나로 넘긴다(목록은 [router.module.ts](src/router/router.module.ts) 의 `inject` 배열).
+일반 멘션은 Intent Classifier 가 한 번 분류해 등록된 워커 중 하나로 넘긴다. 실행 번호를 지목한 재실행 요청은 규칙으로 바로 담당자를 고른다(목록은 [router.module.ts](src/router/router.module.ts) 의 `inject` 배열).
 
 직전 대화를 기억한다 — 사용자·채널·스레드 단위로 5턴, TTL 30분(Redis, 실패 시 in-memory fallback). 그래서 "그거 분배해" 같은 지시대명사가 직전 실행을 자동으로 가리킨다.
 
@@ -224,6 +224,7 @@ pnpm dev              # watch 모드 기동
 
 - **BLOG · 이직 메이트 · 지원 추적** — 자연어 전용. 기존 Notion 초안 발행은 `BLOG_PUBLISH`가 자연어와 `/blog-publish`를 모두 지원
 - **VACATION** — `/휴가` 와 자연어 둘 다 지원
+- **RUN_RETRY** — `실행번호 14034 다시 해줘`처럼 번호를 지목하면 실패 실행은 재시도하고, 질문으로 멈춘 일정 등록은 확인 카드를 띄운다.
 
 필요한 이벤트 구독과 Bot scope 는 아래 [Slack 봇 최초 설정](#-설정)에 모아 두었다.
 
