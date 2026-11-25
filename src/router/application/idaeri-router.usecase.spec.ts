@@ -144,6 +144,50 @@ describe('IdaeriRouterUsecase', () => {
     expect(classifier.classify).not.toHaveBeenCalled();
   });
 
+  it('실행 번호를 지목한 재실행 요청은 classifier 없이 RUN_RETRY 로 보내고 pattern 근거를 남긴다', async () => {
+    const retryType = 'RUN_RETRY' as AgentType;
+    let routing: RoutingContext | undefined;
+    const retryDispatcher = buildDispatcher(retryType, () => {
+      routing = claimRoutingContext();
+      return { agentRunId: 0 };
+    });
+    const { usecase, classifier } = buildUsecase([retryDispatcher]);
+
+    const result = await usecase.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '실행번호 14034에 대해서 다시 해봐.',
+    });
+
+    expect(result.workerType).toBe(retryType);
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(routing).toMatchObject({
+      routedTo: retryType,
+      routedVia: 'pattern',
+    });
+  });
+
+  it('RUN_RETRY dispatcher 가 없으면 실행 번호를 지목해도 기존 classifier 경로로 보낸다', async () => {
+    const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
+      agentRunId: 42,
+    }));
+    const classifier = buildClassifierMock({
+      agentType: AgentType.PM,
+      confidence: 0.8,
+      reason: '등록된 worker 선택',
+    });
+    const { usecase } = buildUsecase([pmDispatcher], classifier);
+
+    const result = await usecase.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '실행번호 14034에 대해서 다시 해봐.',
+    });
+
+    expect(classifier.classify).toHaveBeenCalled();
+    expect(result.workerType).toBe(AgentType.PM);
+  });
+
   it('dispatcher 의 autoResolvedNotice 를 root DispatchResult 로 전달한다', async () => {
     const autoResolvedOutcome = {
       agentRunId: 43,

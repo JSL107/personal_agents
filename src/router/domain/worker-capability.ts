@@ -31,6 +31,13 @@ export const WORKER_CAPABILITIES: readonly WorkerCapability[] = [
       '마감·신청·예약을 날짜와 함께 등록하고, 등록한 일정을 알려 준다. 예: "9월 30일 자동차세 등록해줘", "이번주 일정 뭐 있어?"',
   },
   {
+    agentType: AgentType.RUN_RETRY,
+    classifierLine:
+      '⚠️ 실행 번호를 지목해 다시 돌리기·재실행·재시도를 요청 ("실행번호 14034 다시 해봐", "실행 번호 14034 재시도"). 실행 결과 조회는 해당하지 않는다.',
+    canDo:
+      '실행 번호를 지목한 실패 실행을 다시 돌리고, 질문으로 멈춘 일정 등록은 확인 후 진행한다. 예: "실행번호 14034 다시 해줘"',
+  },
+  {
     agentType: AgentType.WORK_REVIEWER,
     classifierLine: '회고/완료 작업 정리 ("오늘 한 일 정리", "worklog")',
     canDo: '오늘 한 일을 회고로 정리한다. 예: "오늘 한 일 정리해줘"',

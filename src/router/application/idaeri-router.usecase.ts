@@ -12,6 +12,7 @@ import {
 import { RoutedVia, TriggerType } from '../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { parseRunRetryRequest } from '../../run-replay/domain/run-retry-request';
 import { ConversationContext } from '../domain/conversation-context.type';
 import {
   DispatchInput,
@@ -99,6 +100,11 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
   ): Promise<DispatchResult> {
     // 자연어 진입(agentTypeHint 없음)이면 classify 로 agentType + userInstruction 추출.
     // 슬래시(agentTypeHint 있음)는 classify 우회 — userInstruction 없음.
+    const retryRunId = input.text ? parseRunRetryRequest(input.text) : null;
+    const patternAgentType =
+      retryRunId !== null && this.dispatcherByType.has(AgentType.RUN_RETRY)
+        ? AgentType.RUN_RETRY
+        : undefined;
     const nicknameAgentType = input.text
       ? resolveAgentTypeByNickname(input.text, this.dispatcherByType.keys())
       : undefined;
@@ -115,13 +121,19 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
           userInstruction: undefined,
           routedVia: 'hint',
         }
-      : nicknameAgentType
+      : patternAgentType
         ? {
-            agentType: nicknameAgentType,
+            agentType: patternAgentType,
             userInstruction: undefined,
-            routedVia: 'nickname',
+            routedVia: 'pattern',
           }
-        : await this.classifyOrThrow(input);
+        : nicknameAgentType
+          ? {
+              agentType: nicknameAgentType,
+              userInstruction: undefined,
+              routedVia: 'nickname',
+            }
+          : await this.classifyOrThrow(input);
     const agentType = classified.agentType;
 
     const dispatcher = this.dispatcherByType.get(agentType);

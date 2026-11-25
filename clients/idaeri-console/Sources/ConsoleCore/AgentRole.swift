@@ -43,6 +43,8 @@ public func agentRoleLabel(for agentType: String) -> String? {
         return "김기획"
     // 같은 "일정" 이라도 PM 은 그날 할 일을 짜고 이쪽은 날짜가 정해진 마감·신청·예약을 챙긴다.
     // 이름표에서도 그 차이가 보이게 마감을 남긴다.
+    case "RUN_RETRY":
+        return "재실행"
     case "SCHEDULE":
         return "오마감"
     case "ART_JOB_FEED":

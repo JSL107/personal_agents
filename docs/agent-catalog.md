@@ -2,7 +2,7 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 34종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
+이대리의 에이전트 35종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 닉네임 | 기술 이름 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
@@ -36,6 +36,7 @@
 | 형식이 | Reels Format Planner | `REELS_FORMAT_PLANNER` | — (webhook/자동) | CHATGPT | `src/agent/reels-format-planner/application/propose-reels-format.usecase.ts` | 릴스 형식 실험의 다음 후보와 판정 해석 제안 (내부 전용) |
 | 정판단 | Review Reply Judge | `REVIEW_REPLY_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/review-reply-judge/application/judge-review-reply.usecase.ts` | PR 리뷰 답변 수용 여부 판정 |
 | 길잡이 | Router | `ROUTER` | — (webhook/자동) | CHATGPT | `src/router/application/idaeri-router.usecase.ts` | 요청을 담당자에게 넘기는 설비 — 넘기지 못한 요청(분류 실패·미등록 담당자)만 기록한다 |
+| 재실행 | Run Retry | `RUN_RETRY` | — (webhook/자동) | CHATGPT | `src/run-replay/infrastructure/run-retry.dispatcher.ts` | 실행 번호를 지목한 실패·보류 실행의 재시도 (자연어 멘션) |
 | 오마감 | Schedule | `SCHEDULE` | — (webhook/자동) | CHATGPT | `src/schedule/application/register-schedule.usecase.ts` | 마감·신청·예약 등록과 업무 상태·알림·연락할 일·메모 관리 (자연어 멘션, 대화 추출에 LLM 사용) |
 | 제안나 | Subconscious Gate | `SUBCONSCIOUS_GATE` | — (webhook/자동) | CHATGPT | `src/subconscious/infrastructure/llm-subconscious-gate.ts` | 내부 proactive 게이트 — 상태 변화를 promote/drop 분류 (슬래시 없음, 내부 전용) |
 | 오휴가 | Vacation | `VACATION` | `/휴가` | CHATGPT | `src/agent/vacation/application/calculate-balance.usecase.ts` | 휴가 잔여 계산 (자연어 파라미터 추출에만 LLM 사용) |

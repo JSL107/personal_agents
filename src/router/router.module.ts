@@ -38,6 +38,8 @@ import { ModelRouterModule } from '../model-router/model-router.module';
 import { PaperTradeDispatcher } from '../paper-trading/infrastructure/paper-trade.dispatcher';
 import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
+import { RunRetryDispatcher } from '../run-replay/infrastructure/run-retry.dispatcher';
+import { RunReplayModule } from '../run-replay/run-replay.module';
 import { ScheduleDispatcher } from '../schedule/infrastructure/schedule.dispatcher';
 import { ScheduleModule } from '../schedule/schedule.module';
 import { SlackDeliveryModule } from '../slack/slack-delivery.module';
@@ -85,6 +87,7 @@ import { RoutingNoRunPrismaRepository } from './infrastructure/routing-no-run.pr
     CareerMateModule,
     JobApplicationModule,
     PaperTradingModule,
+    RunReplayModule,
     DelayReportModule,
     ScheduleModule,
     VideoWatchModule,
@@ -137,6 +140,7 @@ import { RoutingNoRunPrismaRepository } from './infrastructure/routing-no-run.pr
         ScheduleDispatcher,
         VideoWatchDispatcher,
         ArtJobFeedDispatcher,
+        RunRetryDispatcher,
       ],
     },
   ],
