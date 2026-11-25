@@ -15,6 +15,7 @@ import {
   EvaluatedAccountEntry,
   EvaluatePaperAccountUsecase,
 } from '../../../paper-trading/application/evaluate-paper-account.usecase';
+import { LiquidateDelistedPositionsUsecase } from '../../../paper-trading/application/liquidate-delisted-positions.usecase';
 import { PaperTradingAutopilotTask } from './paper-trading.autopilot-task';
 
 const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-08-11' };
@@ -125,6 +126,9 @@ const createFixture = (input?: {
   const reportImage = {
     execute: jest.fn().mockResolvedValue(input?.reportImage ?? null),
   };
+  const liquidateDelisted = {
+    execute: jest.fn().mockResolvedValue({ fills: [], failures: [] }),
+  };
   return {
     task: new PaperTradingAutopilotTask(
       evaluate as unknown as EvaluatePaperAccountUsecase,
@@ -137,7 +141,9 @@ const createFixture = (input?: {
           .fn()
           .mockResolvedValue(holidayCalendarOf(input?.holidays ?? [])),
       },
+      liquidateDelisted as unknown as LiquidateDelistedPositionsUsecase,
     ),
+    liquidateDelisted,
     evaluate,
     exitBand,
     reportImage,

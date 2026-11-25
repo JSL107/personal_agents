@@ -60,6 +60,24 @@ export interface PaperPositionWithTicker extends PaperPositionRecord {
   };
 }
 
+export interface FindDelistedPositionsInput {
+  accountId: number;
+  onOrBefore: Date;
+}
+
+// 상장폐지된 종목의 보유분. 폐지 뒤에는 시세 공급자가 봉을 주지 않으므로 청산가의 근거는
+// 우리가 마지막으로 적재한 종가뿐이다 — 그것도 없으면 lastClose 가 null 이다.
+export interface DelistedPositionRecord {
+  tickerId: number;
+  tickerCode: string;
+  tickerName: string;
+  krxMarket: string | null;
+  quantity: Prisma.Decimal;
+  delistedAt: Date;
+  lastClose: Prisma.Decimal | null;
+  lastCloseDate: Date | null;
+}
+
 export interface ApplyTradeInput {
   accountId: number;
   tickerId: number;
@@ -268,7 +286,8 @@ export interface CreateExitBandOrdersInput {
   targetTradeDate: Date;
   agentRunId: number | null;
   // 이 회차가 쓴 밴드 설정. 주문마다 박아 둬야 값을 바꾼 전후 성적을 갈라 볼 수 있다.
-  threshold: ExitBandThreshold;
+  // 밴드가 아닌 매도(상장폐지 청산)는 null — 밴드 값을 박으면 성적 집계가 밴드 청산으로 센다.
+  threshold: ExitBandThreshold | null;
   orders: ExitBandOrderInput[];
 }
 
@@ -1067,6 +1086,41 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
     });
   }
 
+  async findDelistedPositions({
+    accountId,
+    onOrBefore,
+  }: FindDelistedPositionsInput): Promise<DelistedPositionRecord[]> {
+    const positions = await this.prisma.paperPosition.findMany({
+      where: {
+        accountId,
+        quantity: { gt: 0 },
+        ticker: { delistedAt: { lte: onOrBefore } },
+      },
+      include: { ticker: true },
+      orderBy: { tickerId: 'asc' },
+    });
+    const records: DelistedPositionRecord[] = [];
+    for (const position of positions) {
+      const latest = await this.prisma.dailyPrice.findFirst({
+        where: { tickerId: position.tickerId, tradeDate: { lte: onOrBefore } },
+        select: { close: true, tradeDate: true },
+        orderBy: { tradeDate: 'desc' },
+      });
+      records.push({
+        tickerId: position.tickerId,
+        tickerCode: position.ticker.code,
+        tickerName: position.ticker.name,
+        krxMarket: position.ticker.krxMarket,
+        quantity: position.quantity,
+        // where 가 delistedAt 을 걸렀으므로 null 일 수 없다.
+        delistedAt: position.ticker.delistedAt!,
+        lastClose: latest?.close ?? null,
+        lastCloseDate: latest?.tradeDate ?? null,
+      });
+    }
+    return records;
+  }
+
   async applyTradeAtomically(
     input: ApplyTradeInput,
   ): Promise<ApplyTradeResult> {
@@ -1666,8 +1720,8 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
             targetTradeDate: input.targetTradeDate,
             status: 'PENDING',
             agentRunId: input.agentRunId,
-            exitTakeProfitPercent: input.threshold.takeProfitPercent,
-            exitStopLossPercent: input.threshold.stopLossPercent,
+            exitTakeProfitPercent: input.threshold?.takeProfitPercent ?? null,
+            exitStopLossPercent: input.threshold?.stopLossPercent ?? null,
           },
         ];
       });
