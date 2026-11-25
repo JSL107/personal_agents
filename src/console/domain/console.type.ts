@@ -201,6 +201,9 @@ export type ConsoleEvent =
       readonly session: ConsoleSession;
     }
   | { readonly type: 'session.closed'; readonly sessionId: string }
+  // 일정이 바뀌었다는 신호만 보낸다. 내용은 앱이 보고 있는 달을 다시 조회해 받는다 —
+  // 어느 달을 보는지는 앱만 안다.
+  | { readonly type: 'schedule.changed' }
   | {
       readonly type: 'command.rejected';
       readonly commandId: string;

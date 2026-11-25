@@ -4,6 +4,7 @@ import { WebClient } from '@slack/web-api';
 
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { LoopbackOnlyGuard } from '../common/guard/loopback-only.guard';
+import { ConsoleEventBus } from '../console/application/console-event-bus.service';
 import { ConsoleReadGuard } from '../console/interface/console-read.guard';
 import { FactAnswerModule } from '../fact-answer/fact-answer.module';
 import { GithubModule } from '../github/github.module';
@@ -36,6 +37,7 @@ import { SCHEDULE_REPOSITORY_PORT } from './domain/port/schedule.repository.port
 import { SCHEDULE_COLLECTION_STATE_REPOSITORY_PORT } from './domain/port/schedule-collection-state.repository.port';
 import { SCHEDULE_NOTIFIER_PORT } from './domain/port/schedule-notifier.port';
 import { DailyTodoPrismaRepository } from './infrastructure/daily-todo.prisma.repository';
+import { notifyOnScheduleWrite } from './infrastructure/notify-on-schedule-write';
 import { ScheduleDispatcher } from './infrastructure/schedule.dispatcher';
 import { SchedulePrismaRepository } from './infrastructure/schedule.prisma.repository';
 import { ScheduleCollectionStatePrismaRepository } from './infrastructure/schedule-collection-state.prisma.repository';
@@ -61,7 +63,21 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
       provide: DAILY_TODO_REPOSITORY_PORT,
       useClass: DailyTodoPrismaRepository,
     },
-    { provide: SCHEDULE_REPOSITORY_PORT, useClass: SchedulePrismaRepository },
+    SchedulePrismaRepository,
+    {
+      // 일정 내용은 SSE 에 싣지 않는다. 바뀌었다는 신호만 보내 콘솔 캘린더가 다시 읽게 한다.
+      provide: SCHEDULE_REPOSITORY_PORT,
+      // eslint-disable-next-line no-restricted-syntax -- Nest 는 inject 순서대로 인자를 넣는다
+      useFactory: (
+        repository: SchedulePrismaRepository,
+        eventBus: ConsoleEventBus,
+      ) =>
+        notifyOnScheduleWrite({
+          repository,
+          onChanged: () => eventBus.publish({ type: 'schedule.changed' }),
+        }),
+      inject: [SchedulePrismaRepository, ConsoleEventBus],
+    },
     {
       provide: SCHEDULE_COLLECTION_STATE_REPOSITORY_PORT,
       useClass: ScheduleCollectionStatePrismaRepository,

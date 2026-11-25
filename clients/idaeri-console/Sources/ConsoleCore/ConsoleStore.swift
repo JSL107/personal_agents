@@ -46,6 +46,9 @@ public final class ConsoleStore: ObservableObject {
     }
     /// 캘린더 탭이 조회한 일정 목록. 스냅샷과 무관하게 탭이 열릴 때·상태 변경 직후에만 갱신된다.
     @Published public private(set) var schedules: [ScheduleItem] = []
+    /// `schedule.changed` 를 받을 때마다 오른다. 조회는 보고 있는 달을 아는 캘린더 화면이
+    /// 하므로, 스토어는 "다시 읽을 때" 만 알린다.
+    @Published public private(set) var scheduleRevision = 0
     @Published public private(set) var pendingCommands: [PendingCommand] = []
     @Published public private(set) var conversation: [ConsoleTurn] = []
     /// 내가 보낸 command id. pending 은 `run.finished` 로 `.done` 이 되면 janitor 가 TTL 없이
@@ -204,6 +207,8 @@ public final class ConsoleStore: ObservableObject {
             if tracked || wasSentHere(commandId: commandId) {
                 appendConversationTurn(role: .idaeri, text: message, at: Date())
             }
+        case .scheduleChanged:
+            scheduleRevision += 1
         }
         eventStream.send(event)
     }
