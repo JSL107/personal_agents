@@ -13,6 +13,7 @@ import { EvaluatePaperAccountUsecase } from './application/evaluate-paper-accoun
 import { ExecutePaperOrderUsecase } from './application/execute-paper-order.usecase';
 import { FillPendingOrdersUsecase } from './application/fill-pending-orders.usecase';
 import { GetPaperTradingStatusUsecase } from './application/get-paper-trading-status.usecase';
+import { LiquidateDelistedPositionsUsecase } from './application/liquidate-delisted-positions.usecase';
 import { OpenPaperAccountUsecase } from './application/open-paper-account.usecase';
 import { RecordPaperTradeUsecase } from './application/record-paper-trade.usecase';
 import { ScoreRecommendationsUsecase } from './application/score-recommendations.usecase';
@@ -45,6 +46,7 @@ import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.pri
     ApplyExitBandUsecase,
     ApplyCorporateActionUsecase,
     ApplyIntradayStopUsecase,
+    LiquidateDelistedPositionsUsecase,
     FillPendingOrdersUsecase,
     ScoreRecommendationsUsecase,
     BuildPaperReportImageUsecase,
@@ -62,6 +64,7 @@ import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.pri
     ApplyExitBandUsecase,
     ApplyCorporateActionUsecase,
     ApplyIntradayStopUsecase,
+    LiquidateDelistedPositionsUsecase,
     FillPendingOrdersUsecase,
     ScoreRecommendationsUsecase,
     BuildPaperReportImageUsecase,

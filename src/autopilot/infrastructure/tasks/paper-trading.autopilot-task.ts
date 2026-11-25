@@ -21,6 +21,10 @@ import {
   EvaluatePaperAccountUsecase,
 } from '../../../paper-trading/application/evaluate-paper-account.usecase';
 import {
+  LiquidateDelistedPositionsUsecase,
+  LiquidateDelistedResult,
+} from '../../../paper-trading/application/liquidate-delisted-positions.usecase';
+import {
   formatPaperAccountHeadline,
   formatPaperTradingReport,
 } from '../../../paper-trading/infrastructure/paper-trading.formatter';
@@ -49,6 +53,7 @@ interface PaperTradingAudit {
   accounts: PaperTradingAccountAudit[];
   exitBandOrderCount: number;
   exitBandAccounts: ApplyExitBandResult['accounts'];
+  delistedLiquidation: LiquidateDelistedResult;
 }
 
 const buildAccountAudit = (
@@ -84,12 +89,14 @@ const buildAccountAudit = (
 const buildAudit = (
   result: EvaluateAllAccountsResult,
   exitBand: ApplyExitBandResult,
+  delisted: LiquidateDelistedResult,
 ): PaperTradingAudit => ({
   accountCount: result.accounts.length,
   failedCount: result.accounts.filter((entry) => !entry.evaluation).length,
   accounts: result.accounts.map(buildAccountAudit),
   exitBandOrderCount: exitBand.createdCount,
   exitBandAccounts: exitBand.accounts,
+  delistedLiquidation: delisted,
 });
 
 // 규칙이 건 매도는 다음 거래일 시가에 체결된다. 카드에 안 적으면 다음날 아침 잔고가
@@ -116,6 +123,21 @@ const buildExitBandText = (exitBand: ApplyExitBandResult): string => {
   const pendingText =
     pendingCount > 0 ? ` · 이미 예약돼 있던 매도 ${pendingCount}건` : '';
   return `\n\n*청산 예약: 다음 거래일 시가 매도 ${exitBand.createdCount}건${pendingText}*\n${lines.join('\n')}`;
+};
+
+// 폐지 청산은 계좌 잔고를 바꾸는 매도라, 카드에 없으면 다음날 보유가 사라진 이유를 원장으로만 알 수 있다.
+const buildDelistedText = (delisted: LiquidateDelistedResult): string => {
+  if (delisted.fills.length === 0 && delisted.failures.length === 0) {
+    return '';
+  }
+  const lines = [
+    ...delisted.fills.map(
+      (fill) =>
+        `• [${PAPER_ACCOUNT_LABEL[fill.accountName] ?? fill.accountName}] ${fill.tickerName}(${fill.tickerCode}) ${fill.quantity}주 · ${fill.price}원 청산`,
+    ),
+    ...delisted.failures.map((failure) => `• ⚠️ ${failure}`),
+  ];
+  return `\n\n*상장폐지 청산 ${delisted.fills.length}건*\n${lines.join('\n')}`;
 };
 
 // 계좌가 여러 개면 어느 계좌의 평가인지가 리포트에서 드러나야 한다. 포매터는 계좌 이름을
@@ -170,6 +192,7 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
     private readonly agentRunService: AgentRunService,
     @Inject(HOLIDAY_CALENDAR_PORT)
     private readonly holidayCalendar: HolidayCalendarPort,
+    private readonly liquidateDelisted: LiquidateDelistedPositionsUsecase,
   ) {}
 
   async run(context: AutopilotTaskContext): Promise<AutopilotTaskResult> {
@@ -197,6 +220,12 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
         // firedAtKst는 오케스트레이터가 고정한 KST 날짜다. 17:40 KST 시각으로 바꿔
         // 재시도 시각이 자정을 넘어도 원래 슬롯의 거래일을 평가하게 한다.
         const executedAt = new Date(`${context.firedAtKst}T08:40:00.000Z`);
+        // 평가보다 먼저 판다. 폐지 종목이 보유에 남아 있으면 시세가 없어 그 계좌 평가가 통째로
+        // 건너뛰어진다. 재시도로 다시 들어와도 보유가 이미 0 이라 같은 종목을 두 번 팔지 않는다.
+        const delisted = await this.liquidateDelisted.execute({
+          executedAt,
+          agentRunId,
+        });
         const evaluations =
           await this.evaluatePaperAccount.executeAll(executedAt);
         // 한 계좌라도 실패하면 그 계좌의 그날 스냅샷은 비어 있고, 스냅샷은 거래일 단위라
@@ -249,8 +278,19 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
                   )
                   .join(', ')}`
               : '';
+          // 폐지 청산도 이 앞에서 커밋됐다. 재시도 카드는 원장에서 다시 읽지만, 실패한 회차의
+          // 원장 기록에도 무엇을 팔았는지 남긴다.
+          const delistedSummary =
+            delisted.fills.length > 0
+              ? ` / 상장폐지 청산 ${delisted.fills.length}건 체결: ${delisted.fills
+                  .map(
+                    (fill) =>
+                      `[${PAPER_ACCOUNT_LABEL[fill.accountName] ?? fill.accountName}] ${fill.tickerName}(${fill.tickerCode}) ${fill.quantity}주`,
+                  )
+                  .join(', ')}`
+              : '';
           throw new Error(
-            `가상 계좌 ${evaluations.accounts.length}개 중 ${failedEntries.length}개를 평가하지 못했습니다: ${detail}${evaluatedText}${exitBandText}`,
+            `가상 계좌 ${evaluations.accounts.length}개 중 ${failedEntries.length}개를 평가하지 못했습니다: ${detail}${evaluatedText}${exitBandText}${delistedSummary}`,
           );
         }
         // 청산이 없는 날도 매일 채널로 낸다. 청산 있는 날만 보내던 2026-10-13~11-03(#778)에는
@@ -263,7 +303,9 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
         const taskResult: AutopilotTaskResult = {
           skip: false,
           summaryText:
-            buildSummaryText(evaluations) + buildExitBandText(exitBand),
+            buildSummaryText(evaluations) +
+            buildDelistedText(delisted) +
+            buildExitBandText(exitBand),
           // 그림이 있는 회차에서만 쓰인다 — orchestrator 가 그림과 짝지어야 배치를 뒤집는다.
           ...(headlineText ? { headlineText } : {}),
           ...(reportImage
@@ -279,7 +321,7 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
         return {
           result: taskResult,
           modelUsed: 'deterministic',
-          output: buildAudit(evaluations, exitBand),
+          output: buildAudit(evaluations, exitBand, delisted),
         };
       },
     });

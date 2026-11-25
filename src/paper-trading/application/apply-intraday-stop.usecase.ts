@@ -136,7 +136,7 @@ const recordPriceError = (
   }
 };
 
-const parseMarket = (value: string | null): PaperMarket | null => {
+export const parseMarket = (value: string | null): PaperMarket | null => {
   if (value === 'KOSPI' || value === 'KOSDAQ' || value === 'KONEX') {
     return value;
   }
@@ -225,9 +225,19 @@ export class ApplyIntradayStopUsecase {
     tradeDay: Date;
     result: ApplyIntradayStopResult;
   }): Promise<void> {
-    const positions = await this.repository.findPositionsWithTicker(
-      input.account.id,
+    // 폐지 종목은 시세 공급자에서 사라져 조회가 회차마다 실패한다. 청산은 장마감 평가 앞의
+    // LiquidateDelistedPositionsUsecase 가 맡으므로 여기서는 보지 않는다.
+    const delistedTickerIds = new Set(
+      (
+        await this.repository.findDelistedPositions({
+          accountId: input.account.id,
+          onOrBefore: input.tradeDay,
+        })
+      ).map((position) => position.tickerId),
     );
+    const positions = (
+      await this.repository.findPositionsWithTicker(input.account.id)
+    ).filter((position) => !delistedTickerIds.has(position.tickerId));
     const candidates = await this.collectCandidates(
       positions,
       input.tradeDate,
