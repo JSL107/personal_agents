@@ -42,52 +42,109 @@ export const parseHeaderPath = (
 // 줄 수를 생략하면 1 이다(`@@ -3 +3 @@`).
 const HUNK_HEADER = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
-// diff 의 추가된 줄을 파일·줄 번호와 함께 꺼낸다.
+export enum DiffLineKind {
+  // 파일 헤더·hunk 머리·"\ No newline at end of file" 처럼 바뀐 줄이 아닌 것 전부.
+  HEADER = 'header',
+  ADDED = 'added',
+  REMOVED = 'removed',
+  CONTEXT = 'context',
+}
+
+export interface DiffLine {
+  kind: DiffLineKind;
+  raw: string;
+  // 변경 후 파일 기준 줄 번호. hunk 본문의 추가·문맥 줄에만 있다.
+  newLine?: number;
+}
+
+export const isChangedLine = ({ kind }: DiffLine): boolean =>
+  kind === DiffLineKind.ADDED || kind === DiffLineKind.REMOVED;
+
+// hunk 헤더 없이 잘라 붙인 diff 도 있어, hunk 밖에서는 `+++ `·`--- ` 만 헤더로 본다.
+const outsideHunkKind = (raw: string): DiffLineKind => {
+  if (raw.startsWith('+++ ') || raw.startsWith('--- ')) {
+    return DiffLineKind.HEADER;
+  }
+  if (raw.startsWith('+')) {
+    return DiffLineKind.ADDED;
+  }
+  if (raw.startsWith('-')) {
+    return DiffLineKind.REMOVED;
+  }
+  return DiffLineKind.HEADER;
+};
+
+// diff 의 줄을 헤더·추가·삭제·문맥으로 나눈다. diff 를 줄 단위로 읽는 곳은 모두 이것을 거친다.
 //
 // hunk 헤더가 알려 준 줄 수만큼을 본문으로 센다. 본문 안의 `+++ `·`--- ` 는 헤더가 아니라
-// `++ x` 를 추가하거나 `-- x` 를 지운 줄이다 — 접두사만 보면 추가 줄을 헤더로 오인해 검사를 건너뛴다.
-export const listAddedLines = (diff: string): AddedLine[] => {
-  const added: AddedLine[] = [];
-  let file = '(알 수 없는 파일)';
+// `++ x` 를 추가하거나 `-- x` 를 지운 줄이다 — 접두사만 보면 바뀐 줄을 헤더로 오인해 건너뛴다.
+export const scanDiffLines = (diff: string): DiffLine[] => {
+  const lines: DiffLine[] = [];
   let nextLine = 0;
   let oldRemaining = 0;
   let newRemaining = 0;
 
   for (const raw of diff.split('\n')) {
+    // 본문 줄은 공백·`+`·`-`·`\` 로 시작한다 — 줄 수가 틀린 hunk 가 다음 파일까지 먹지 않게 끊는다.
+    if (raw.startsWith('diff --git ')) {
+      oldRemaining = 0;
+      newRemaining = 0;
+    }
     if (oldRemaining <= 0 && newRemaining <= 0) {
-      if (raw.startsWith('+++ ')) {
-        // 따옴표로 감싼 비ASCII 경로·공백 경로 끝의 탭을 풀어야 changedFiles 와 같은 경로가 된다 —
-        // 안 풀면 신호가 점수에는 들어가도 어느 파일인지 표에 안 나온다. 접두사가 없는 헤더는 그대로 쓴다.
-        file = parseHeaderPath(raw, '+++ b/') ?? raw.slice(4).trim();
-        continue;
-      }
       const hunk = HUNK_HEADER.exec(raw);
       if (hunk) {
         oldRemaining = hunk[1] === undefined ? 1 : Number(hunk[1]);
         nextLine = Number(hunk[2]);
         newRemaining = hunk[3] === undefined ? 1 : Number(hunk[3]);
       }
+      lines.push({ kind: outsideHunkKind(raw), raw });
       continue;
     }
     // "\ No newline at end of file" 는 줄로 세지 않는다.
     if (raw.startsWith('\\')) {
+      lines.push({ kind: DiffLineKind.HEADER, raw });
       continue;
     }
     if (raw.startsWith('+')) {
-      added.push({ file, line: nextLine, text: raw.slice(1) });
+      lines.push({ kind: DiffLineKind.ADDED, raw, newLine: nextLine });
       nextLine += 1;
       newRemaining -= 1;
       continue;
     }
     // 삭제 줄은 변경 후 파일에 없으므로 줄 번호를 넘기지 않는다.
     if (raw.startsWith('-')) {
+      lines.push({ kind: DiffLineKind.REMOVED, raw });
       oldRemaining -= 1;
       continue;
     }
     // 문맥 줄(공백 접두. 도구에 따라 빈 줄로 오기도 한다).
+    lines.push({ kind: DiffLineKind.CONTEXT, raw, newLine: nextLine });
     nextLine += 1;
     oldRemaining -= 1;
     newRemaining -= 1;
   }
-  return added;
+  return lines;
 };
+
+// diff 의 추가된 줄을 파일·줄 번호와 함께 꺼낸다.
+export const listAddedLines = (diff: string): AddedLine[] =>
+  scanDiffLines(diff).reduce<{ file: string; added: AddedLine[] }>(
+    (state, { kind, raw, newLine }) => {
+      if (kind === DiffLineKind.HEADER && raw.startsWith('+++ ')) {
+        // 따옴표로 감싼 비ASCII 경로·공백 경로 끝의 탭을 풀어야 changedFiles 와 같은 경로가 된다 —
+        // 안 풀면 신호가 점수에는 들어가도 어느 파일인지 표에 안 나온다. 접두사가 없는 헤더는 그대로 쓴다.
+        const file = parseHeaderPath(raw, '+++ b/') ?? raw.slice(4).trim();
+        return { ...state, file };
+      }
+      // hunk 밖의 `+` 줄은 줄 번호를 모르므로 뺀다.
+      if (kind === DiffLineKind.ADDED && newLine !== undefined) {
+        state.added.push({
+          file: state.file,
+          line: newLine,
+          text: raw.slice(1),
+        });
+      }
+      return state;
+    },
+    { file: '(알 수 없는 파일)', added: [] },
+  ).added;

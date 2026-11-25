@@ -6,6 +6,7 @@
  * hunk 밖에 있으면 존재 자체를 모른다 — 실례: PR #707 은 SWING 1순위 재료를 바꿨는데
  * 같은 파일 206행의 `flowSlot` 교체 경로가 diff 밖이라 그 실험 플래그가 무의미해진 것을 놓쳤다.
  */
+import { isChangedLine, scanDiffLines } from './diff-added-lines';
 
 export const FULL_FILE_MAX_LINES = 400;
 export const HUNK_WINDOW_LINES = 20;
@@ -93,15 +94,13 @@ export const extractChangedSymbols = (
   const keys: string[] = [];
   let inTestFile = false;
 
-  for (const line of diff.split('\n')) {
+  for (const scanned of scanDiffLines(diff)) {
+    const line = scanned.raw;
     if (line.startsWith('diff --git ')) {
       inTestFile = TEST_FILE.test(line);
       continue;
     }
-    if (inTestFile || line.startsWith('+++') || line.startsWith('---')) {
-      continue;
-    }
-    if (!line.startsWith('+') && !line.startsWith('-')) {
+    if (inTestFile || !isChangedLine(scanned)) {
       continue;
     }
     const code = line.slice(1);

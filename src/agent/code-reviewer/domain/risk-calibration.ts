@@ -1,3 +1,4 @@
+import { DiffLineKind, isChangedLine, scanDiffLines } from './diff-added-lines';
 import {
   CalibrationPoint,
   CalibrationReport,
@@ -104,11 +105,12 @@ export const collectSignals = ({
 export const hasDependencyBump = (diff: string): boolean => {
   const removed = new Map<string, DependencyVersion>();
   const added = new Map<string, DependencyVersion>();
-  diff.split('\n').reduce((file, line) => {
-    if (line.startsWith('+++ ')) {
+  scanDiffLines(diff).reduce((file, scanned) => {
+    const line = scanned.raw;
+    if (scanned.kind === DiffLineKind.HEADER && line.startsWith('+++ ')) {
       return line.replace(/^\+\+\+ (?:b\/)?/, '');
     }
-    if (line.startsWith('--- ') || !DEPENDENCY_MANIFEST.test(file)) {
+    if (!isChangedLine(scanned) || !DEPENDENCY_MANIFEST.test(file)) {
       return file;
     }
     const found = DEPENDENCY_LINE.exec(line);
