@@ -9,6 +9,7 @@ import { CalculateBalanceUsecase } from './application/calculate-balance.usecase
 import { CancelLeaveUsecase } from './application/cancel-leave.usecase';
 import { ListUsageUsecase } from './application/list-usage.usecase';
 import { RegisterLeaveUsecase } from './application/register-leave.usecase';
+import { HeldVacationWriteApplier } from './infrastructure/held-vacation-write.applier';
 import { LeaveUsagePrismaRepository } from './infrastructure/leave-usage.prisma.repository';
 import { VacationDispatcher } from './infrastructure/vacation.dispatcher';
 
@@ -24,6 +25,7 @@ import { VacationDispatcher } from './infrastructure/vacation.dispatcher';
     CancelLeaveUsecase,
     AnswerVacationQuestionUsecase,
     VacationDispatcher,
+    HeldVacationWriteApplier,
   ],
   exports: [
     CalculateBalanceUsecase,
@@ -31,6 +33,8 @@ import { VacationDispatcher } from './infrastructure/vacation.dispatcher';
     ListUsageUsecase,
     CancelLeaveUsecase,
     VacationDispatcher,
+    HeldVacationWriteApplier,
+    LeaveUsagePrismaRepository,
   ],
 })
 export class VacationModule {}

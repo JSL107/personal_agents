@@ -7,9 +7,10 @@ import {
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { AgentType } from '../../../model-router/domain/model-router.type';
-import { addDays } from '../../vacation/domain/plain-date';
+import { addDays, PlainDate } from '../../vacation/domain/plain-date';
 import { JobApplicationException } from '../domain/job-application.exception';
 import {
+  ApplicationStatus,
   FOLLOW_UP_AFTER_DAYS,
   JobApplicationRecord,
   TERMINAL_STATUSES,
@@ -20,6 +21,14 @@ import {
   JOB_APPLICATION_REPOSITORY_PORT,
   JobApplicationRepositoryPort,
 } from '../domain/port/job-application.repository.port';
+
+export interface UpdateApplicationByIdInput {
+  slackUserId: string;
+  id: number;
+  expectedStatus: ApplicationStatus;
+  status: ApplicationStatus;
+  today: PlainDate;
+}
 
 @Injectable()
 export class UpdateApplicationUsecase {
@@ -36,9 +45,7 @@ export class UpdateApplicationUsecase {
     today,
   }: UpdateApplicationInput): Promise<AgentRunOutcome<JobApplicationRecord>> {
     // 종료 상태로 가면 더 넛지하지 않는다(null). 비종료 전환이면 팔로업 클럭을 리셋.
-    const nextFollowUpAt = TERMINAL_STATUSES.includes(status)
-      ? null
-      : addDays(today, FOLLOW_UP_AFTER_DAYS);
+    const nextFollowUpAt = calculateNextFollowUpAt({ status, today });
     return this.agentRunService.execute<JobApplicationRecord>({
       agentType: AgentType.JOB_APPLICATION,
       triggerType: TriggerType.SLACK_MENTION_JOB_APPLICATION,
@@ -65,4 +72,55 @@ export class UpdateApplicationUsecase {
       },
     });
   }
+
+  async executeById({
+    slackUserId,
+    id,
+    expectedStatus,
+    status,
+    today,
+  }: UpdateApplicationByIdInput): Promise<
+    AgentRunOutcome<JobApplicationRecord | null>
+  > {
+    const nextFollowUpAt = calculateNextFollowUpAt({ status, today });
+    return this.agentRunService.execute<JobApplicationRecord | null>({
+      agentType: AgentType.JOB_APPLICATION,
+      triggerType: TriggerType.SLACK_MENTION_JOB_APPLICATION,
+      inputSnapshot: {
+        slackUserId,
+        applicationId: id,
+        expectedStatus,
+        status,
+        action: 'UPDATE_STATUS',
+      },
+      run: async () => {
+        const updated = await this.repository.updateStatusIfUnchanged({
+          slackUserId,
+          id,
+          expectedStatus,
+          status,
+          nextFollowUpAt,
+        });
+        return {
+          result: updated,
+          modelUsed: 'deterministic',
+          output: updated,
+        };
+      },
+    });
+  }
 }
+
+const calculateNextFollowUpAt = ({
+  status,
+  today,
+}: {
+  status: ApplicationStatus;
+  today: PlainDate;
+}): PlainDate | null => {
+  if (TERMINAL_STATUSES.includes(status)) {
+    return null;
+  }
+  const nextFollowUpAt = addDays(today, FOLLOW_UP_AFTER_DAYS);
+  return nextFollowUpAt;
+};

@@ -6,12 +6,16 @@ describe('RunRetryDispatcher', () => {
   const runner = { run: jest.fn() };
   const preview = { execute: jest.fn() };
   const countPreviews = { execute: jest.fn() };
+  const listUsage = { execute: jest.fn() };
+  const applications = { findActiveByCompanyRef: jest.fn() };
   const dispatcher = new RunRetryDispatcher(
     repository as never,
     replay as never,
     runner as never,
     preview as never,
     countPreviews as never,
+    listUsage as never,
+    applications as never,
   );
   const input = {
     source: 'SLACK_MESSAGE' as const,
@@ -34,6 +38,169 @@ describe('RunRetryDispatcher', () => {
       formattedText: '완료',
     });
     expect(runner.run).toHaveBeenCalledWith(prepared);
+  });
+  it('보류된 휴가 등록은 확인 카드를 만든다', async () => {
+    repository.findById.mockResolvedValue({
+      id: 123,
+      status: 'SUCCEEDED',
+      agentType: 'VACATION',
+      inputSnapshot: {
+        slackUserId: 'U1',
+        asOf: { year: 2026, month: 11, day: 25 },
+        parsedIntent: {
+          action: 'UNKNOWN',
+          heldWrite: {
+            action: 'REGISTER',
+            marker: '?',
+            intent: {
+              action: 'REGISTER',
+              startDate: { year: 2026, month: 11, day: 25 },
+              endDate: { year: 2026, month: 11, day: 25 },
+              memo: '휴식',
+            },
+          },
+        },
+      },
+    });
+    countPreviews.execute.mockResolvedValue(0);
+    preview.execute.mockResolvedValue({ id: 'p1' });
+    expect((await dispatcher.dispatch(input)).preview?.id).toBe('p1');
+  });
+  it.each([
+    ['VACATION', 'CANCEL', { usageId: 7 }, 'HELD_VACATION_WRITE'],
+    [
+      'JOB_APPLICATION',
+      'ADD',
+      { company: 'A&B', role: '개발', status: 'APPLIED' },
+      'HELD_JOB_APPLICATION_WRITE',
+    ],
+    [
+      'JOB_APPLICATION',
+      'UPDATE_STATUS',
+      { ref: 'A', status: 'INTERVIEW' },
+      'HELD_JOB_APPLICATION_WRITE',
+    ],
+  ])(
+    '%s %s 보류는 본인 대상의 확인 카드를 만든다',
+    async (agentType, action, fields, kind) => {
+      const date = { year: 2026, month: 11, day: 25 };
+      repository.findById.mockResolvedValue({
+        status: 'SUCCEEDED',
+        agentType,
+        inputSnapshot: {
+          slackUserId: 'U1',
+          asOf: date,
+          today: date,
+          parsedIntent: {
+            action: 'UNKNOWN',
+            heldWrite: { action, marker: '?', intent: { action, ...fields } },
+          },
+        },
+      });
+      listUsage.execute.mockResolvedValue([
+        { id: 7, startDate: date, endDate: date, memo: '<휴식>' },
+      ]);
+      applications.findActiveByCompanyRef.mockResolvedValue({
+        id: 42,
+        company: 'A&B',
+        role: '개발',
+        status: 'APPLIED',
+      });
+      countPreviews.execute.mockResolvedValue(0);
+      preview.execute.mockResolvedValue({ id: 'p2' });
+      const result = await dispatcher.dispatch(input);
+      expect(result.preview?.id).toBe('p2');
+      expect(preview.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind,
+          payload: expect.objectContaining({ sourceRunId: 123, action }),
+        }),
+      );
+      if (action === 'UPDATE_STATUS') {
+        expect(applications.findActiveByCompanyRef).toHaveBeenCalledWith({
+          slackUserId: 'U1',
+          companyRef: 'A',
+        });
+        expect(preview.execute).toHaveBeenCalledWith(
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              applicationId: 42,
+              expectedStatus: 'APPLIED',
+            }),
+          }),
+        );
+      }
+      expect(result.formattedText).not.toContain('A&B');
+    },
+  );
+  it('취소할 본인 휴가가 없으면 카드를 만들지 않는다', async () => {
+    repository.findById.mockResolvedValue({
+      status: 'SUCCEEDED',
+      agentType: 'VACATION',
+      inputSnapshot: {
+        slackUserId: 'U1',
+        asOf: { year: 2026, month: 11, day: 25 },
+        parsedIntent: {
+          heldWrite: {
+            action: 'CANCEL',
+            intent: { action: 'CANCEL', usageId: 7 },
+          },
+        },
+      },
+    });
+    countPreviews.execute.mockResolvedValue(0);
+    listUsage.execute.mockResolvedValue([]);
+    expect((await dispatcher.dispatch(input)).formattedText).toContain(
+      '찾지 못했어요',
+    );
+    expect(preview.execute).not.toHaveBeenCalled();
+  });
+  it('상태 변경 대상이 없으면 카드를 만들지 않는다', async () => {
+    repository.findById.mockResolvedValue({
+      status: 'SUCCEEDED',
+      agentType: 'JOB_APPLICATION',
+      inputSnapshot: {
+        slackUserId: 'U1',
+        today: '2026-11-25',
+        parsedIntent: {
+          heldWrite: {
+            action: 'UPDATE_STATUS',
+            intent: {
+              action: 'UPDATE_STATUS',
+              ref: '회사',
+              status: 'INTERVIEW',
+            },
+          },
+        },
+      },
+    });
+    countPreviews.execute.mockResolvedValue(0);
+    applications.findActiveByCompanyRef.mockResolvedValue(null);
+    expect((await dispatcher.dispatch(input)).formattedText).toContain(
+      '찾지 못했어요',
+    );
+    expect(preview.execute).not.toHaveBeenCalled();
+  });
+  it('승인된 보류 카드가 있으면 새 카드를 만들지 않는다', async () => {
+    repository.findById.mockResolvedValue({
+      status: 'SUCCEEDED',
+      agentType: 'VACATION',
+      inputSnapshot: {
+        slackUserId: 'U1',
+        asOf: { year: 2026, month: 11, day: 25 },
+        parsedIntent: {
+          heldWrite: {
+            action: 'CANCEL',
+            intent: { action: 'CANCEL', usageId: 7 },
+          },
+        },
+      },
+    });
+    countPreviews.execute.mockResolvedValue(1);
+    expect((await dispatcher.dispatch(input)).formattedText).toContain(
+      '이미 다시 실행',
+    );
+    expect(preview.execute).not.toHaveBeenCalled();
   });
   it('본인이 아닌 실행은 거절한다', async () => {
     repository.findById.mockResolvedValue({
@@ -117,12 +284,16 @@ describe('RunRetryDispatcher 안내', () => {
   const runner = { run: jest.fn() };
   const preview = { execute: jest.fn() };
   const countPreviews = { execute: jest.fn() };
+  const listUsage = { execute: jest.fn() };
+  const applications = { findActiveByCompanyRef: jest.fn() };
   const dispatcher = new RunRetryDispatcher(
     repository as never,
     replay as never,
     runner as never,
     preview as never,
     countPreviews as never,
+    listUsage as never,
+    applications as never,
   );
   const input = {
     source: 'SLACK_MESSAGE' as const,

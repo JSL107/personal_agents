@@ -4,10 +4,12 @@ import { BlogModule } from '../agent/blog/blog.module';
 import { CeoModule } from '../agent/ceo/ceo.module';
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
+import { JobApplicationModule } from '../agent/job-application/job-application.module';
 import { PaperRecommendModule } from '../agent/paper-recommend/paper-recommend.module';
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
+import { VacationModule } from '../agent/vacation/vacation.module';
 import { VideoWatchModule } from '../agent/video-watch/video-watch.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
@@ -24,6 +26,8 @@ import { RunRetryDispatcher } from './infrastructure/run-retry.dispatcher';
 @Module({
   imports: [
     AgentRunModule,
+    VacationModule,
+    JobApplicationModule,
     HumanizeModule,
     PreviewGateModule,
     BlogModule,

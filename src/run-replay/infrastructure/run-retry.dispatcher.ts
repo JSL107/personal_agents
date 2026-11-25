@@ -1,6 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import {
+  JOB_APPLICATION_REPOSITORY_PORT,
+  JobApplicationRepositoryPort,
+} from '../../agent/job-application/domain/port/job-application.repository.port';
+import { statusLabel } from '../../agent/job-application/infrastructure/job-application.formatter';
+import { ListUsageUsecase } from '../../agent/vacation/application/list-usage.usecase';
+import {
+  PlainDate,
+  plainDateToIso,
+} from '../../agent/vacation/domain/plain-date';
+import {
   AGENT_RUN_REPOSITORY_PORT,
   AgentRunRepositoryPort,
 } from '../../agent-run/domain/port/agent-run.repository.port';
@@ -21,7 +31,7 @@ import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
 import { ReplayReplyRunner } from '../../slack/format/replay-reply.runner';
 import { toKoreanDate } from '../../slack/format/schedule.formatter';
 import { ReplayFailedRunUsecase } from '../application/replay-failed-run.usecase';
-import { classifyRetryTarget } from '../domain/retry-target';
+import { classifyRetryTarget, RetryTarget } from '../domain/retry-target';
 import { parseRunRetryRequest } from '../domain/run-retry-request';
 
 @Injectable()
@@ -35,6 +45,9 @@ export class RunRetryDispatcher implements AgentDispatcher {
     private readonly runner: ReplayReplyRunner,
     private readonly createPreview: CreatePreviewUsecase,
     private readonly countPreviews: CountPreviewsByPayloadUsecase,
+    private readonly listUsage: ListUsageUsecase,
+    @Inject(JOB_APPLICATION_REPOSITORY_PORT)
+    private readonly applications: JobApplicationRepositoryPort,
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
@@ -103,6 +116,18 @@ export class RunRetryDispatcher implements AgentDispatcher {
       });
       return { ...this.reply(text), preview: { id: preview.id, text } };
     }
+    if (
+      target.kind === 'HELD_VACATION_REGISTER' ||
+      target.kind === 'HELD_VACATION_CANCEL' ||
+      target.kind === 'HELD_JOB_ADD' ||
+      target.kind === 'HELD_JOB_UPDATE_STATUS'
+    ) {
+      return this.createHeldWriteCard({
+        target,
+        runId,
+        slackUserId: input.slackUserId,
+      });
+    }
     if (target.kind === 'HELD_UNAVAILABLE') {
       return this.reply(
         "이 실행은 질문으로 보고 멈췄지만 다시 실행할 내용이 저장돼 있지 않아요. 원래 문장을 '…해줘' 처럼 다시 말해 주세요.",
@@ -116,6 +141,153 @@ export class RunRetryDispatcher implements AgentDispatcher {
     return this.reply(
       `실패했거나 질문으로 멈춘 실행만 다시 돌릴 수 있어요. 실행 #${runId} 은 ${status[run.status] ?? run.status} 상태예요.`,
     );
+  }
+
+  private async createHeldWriteCard({
+    target,
+    runId,
+    slackUserId,
+  }: {
+    target: RetryTarget;
+    runId: number;
+    slackUserId: string;
+  }): Promise<DispatchOutcome> {
+    if (
+      target.kind === 'FAILED' ||
+      target.kind === 'OTHER' ||
+      target.kind === 'HELD_UNAVAILABLE' ||
+      target.kind === 'HELD_SCHEDULE'
+    ) {
+      return this.reply('다시 실행할 내용을 찾지 못했어요.');
+    }
+    const vacation =
+      target.kind === 'HELD_VACATION_REGISTER' ||
+      target.kind === 'HELD_VACATION_CANCEL';
+    const kind = vacation
+      ? PREVIEW_KIND.HELD_VACATION_WRITE
+      : PREVIEW_KIND.HELD_JOB_APPLICATION_WRITE;
+    const applied = await this.countPreviews.execute({
+      kind,
+      payloadPath: ['sourceRunId'],
+      payloadValue: runId,
+      status: PREVIEW_STATUS.APPLIED,
+    });
+    if (applied > 0) {
+      return this.reply(`실행 #${runId} 은 이미 다시 실행했어요.`);
+    }
+    const payload: Record<string, unknown> = {};
+    const lines: string[] = [];
+    if (target.kind === 'HELD_VACATION_REGISTER') {
+      Object.assign(payload, {
+        sourceRunId: runId,
+        action: 'REGISTER',
+        startDate: target.startDate,
+        endDate: target.endDate,
+        ...(target.memo !== undefined ? { memo: target.memo } : {}),
+        ...(target.fraction !== undefined ? { fraction: target.fraction } : {}),
+      });
+      lines.push(
+        `• 기간: ${this.dateRange({ startDate: target.startDate, endDate: target.endDate })}`,
+        `• 반차: ${target.fraction === 0.5 ? '예' : '아니요'}`,
+      );
+      if (target.memo) {
+        lines.push(`• 메모: ${escapeSlackMrkdwn(target.memo)}`);
+      }
+    } else if (target.kind === 'HELD_VACATION_CANCEL') {
+      const usages = await this.listUsage.execute({ slackUserId });
+      const usage = usages.find((record) => record.id === target.usageId);
+      if (!usage) {
+        return this.reply(
+          `취소할 휴가(#${target.usageId})를 찾지 못했어요 — 이미 취소됐거나 다른 기록이에요.`,
+        );
+      }
+      Object.assign(payload, {
+        sourceRunId: runId,
+        action: 'CANCEL',
+        usageId: target.usageId,
+      });
+      lines.push(
+        `• 기간: ${this.dateRange({ startDate: usage.startDate, endDate: usage.endDate })}`,
+      );
+      if (usage.memo) {
+        lines.push(`• 메모: ${escapeSlackMrkdwn(usage.memo)}`);
+      }
+    } else if (target.kind === 'HELD_JOB_ADD') {
+      Object.assign(payload, {
+        sourceRunId: runId,
+        action: 'ADD',
+        company: target.company,
+        role: target.role,
+        status: target.status ?? 'APPLIED',
+        appliedAt: target.appliedAt,
+        ...(target.jdUrl !== undefined ? { jdUrl: target.jdUrl } : {}),
+        ...(target.deadline !== undefined ? { deadline: target.deadline } : {}),
+      });
+      lines.push(
+        `• 회사: ${escapeSlackMrkdwn(target.company)}`,
+        `• 직무: ${escapeSlackMrkdwn(target.role)}`,
+        `• 상태: ${statusLabel(target.status ?? 'APPLIED')}`,
+        `• 지원일: ${plainDateToIso(target.appliedAt)}`,
+      );
+      if (target.deadline) {
+        lines.push(`• 마감: ${plainDateToIso(target.deadline)}`);
+      }
+      if (target.jdUrl) {
+        lines.push(`• 공고 링크: ${escapeSlackMrkdwn(target.jdUrl)}`);
+      }
+    } else {
+      const application = await this.applications.findActiveByCompanyRef({
+        slackUserId,
+        companyRef: target.ref,
+      });
+      if (!application) {
+        return this.reply('해당하는 진행 중 지원 건을 찾지 못했어요.');
+      }
+      Object.assign(payload, {
+        sourceRunId: runId,
+        action: 'UPDATE_STATUS',
+        applicationId: application.id,
+        expectedStatus: application.status,
+        status: target.status,
+      });
+      lines.push(
+        `• 회사: ${escapeSlackMrkdwn(application.company)}`,
+        `• 직무: ${escapeSlackMrkdwn(application.role)}`,
+        `• 상태: ${statusLabel(application.status)} → ${statusLabel(target.status)}`,
+      );
+    }
+    const text = [
+      `*다시 실행* — 실행 #${runId} 에서 질문으로 보고 멈춘 내용이에요.`,
+      ...lines,
+      target.kind === 'HELD_VACATION_CANCEL'
+        ? '취소할까요?'
+        : target.kind === 'HELD_JOB_UPDATE_STATUS'
+          ? '변경할까요?'
+          : '등록할까요?',
+    ].join('\n');
+    const preview = await this.createPreview.execute({
+      slackUserId,
+      kind,
+      payload,
+      previewText: text,
+      ttlMs: 30 * 60 * 1000,
+    });
+    return { ...this.reply(text), preview: { id: preview.id, text } };
+  }
+
+  private dateRange({
+    startDate,
+    endDate,
+  }: {
+    startDate: PlainDate;
+    endDate: PlainDate;
+  }): string {
+    const start = plainDateToIso(startDate);
+    const end = plainDateToIso(endDate);
+    if (start === end) {
+      return start;
+    }
+    return `${start} ~ ${end}`;
   }
 
   private async findHandledCard(runId: number): Promise<string | null> {

@@ -155,7 +155,10 @@ describe('VacationDispatcher', () => {
         expect.objectContaining({
           text,
           parsedIntent: expect.objectContaining({
-            heldWrite: expect.objectContaining({ action }),
+            heldWrite: expect.objectContaining({
+              action,
+              intent: expect.objectContaining({ action }),
+            }),
           }),
         }),
       );
@@ -164,6 +167,9 @@ describe('VacationDispatcher', () => {
         action: 'UNKNOWN',
         heldWrite: { action },
       });
+      expect(
+        (outcome.output as { heldWrite: object }).heldWrite,
+      ).not.toHaveProperty('intent');
       expect(outcome.formattedText).toContain(
         '잔여 4일에서 빼면 1일이 남아요.',
       );

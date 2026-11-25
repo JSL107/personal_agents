@@ -206,11 +206,24 @@ describe('JobApplicationDispatcher', () => {
 
       expect(addExecute).not.toHaveBeenCalled();
       expect(updateExecute).not.toHaveBeenCalled();
+      expect(answerExecute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          parsedIntent: expect.objectContaining({
+            heldWrite: expect.objectContaining({
+              action,
+              intent: expect.objectContaining({ action }),
+            }),
+          }),
+        }),
+      );
       expect(outcome.agentRunId).toBe(13);
       expect(outcome.output).toMatchObject({
         action: 'UNKNOWN',
         heldWrite: { action },
       });
+      expect(
+        (outcome.output as { heldWrite: object }).heldWrite,
+      ).not.toHaveProperty('intent');
       expect(outcome.formattedText).toContain(
         '지금까지 지원 기록은 0건이에요.',
       );

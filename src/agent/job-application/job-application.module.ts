@@ -8,6 +8,7 @@ import { AnswerJobQuestionUsecase } from './application/answer-job-question.usec
 import { ListApplicationsUsecase } from './application/list-applications.usecase';
 import { UpdateApplicationUsecase } from './application/update-application.usecase';
 import { JOB_APPLICATION_REPOSITORY_PORT } from './domain/port/job-application.repository.port';
+import { HeldJobApplicationWriteApplier } from './infrastructure/held-job-application-write.applier';
 import { JobApplicationDispatcher } from './infrastructure/job-application.dispatcher';
 import { JobApplicationPrismaRepository } from './infrastructure/job-application.prisma.repository';
 
@@ -28,6 +29,7 @@ import { JobApplicationPrismaRepository } from './infrastructure/job-application
     ListApplicationsUsecase,
     AnswerJobQuestionUsecase,
     JobApplicationDispatcher,
+    HeldJobApplicationWriteApplier,
   ],
   exports: [
     JOB_APPLICATION_REPOSITORY_PORT,
@@ -35,6 +37,7 @@ import { JobApplicationPrismaRepository } from './infrastructure/job-application
     UpdateApplicationUsecase,
     ListApplicationsUsecase,
     JobApplicationDispatcher,
+    HeldJobApplicationWriteApplier,
   ],
 })
 export class JobApplicationModule {}

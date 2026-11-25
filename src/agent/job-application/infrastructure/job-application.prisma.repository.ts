@@ -13,10 +13,12 @@ import {
   TERMINAL_STATUSES,
 } from '../domain/job-application.type';
 import {
+  FindActiveByCompanyRefInput,
   FindDueNudgesInput,
   JobApplicationRepositoryPort,
   SaveApplicationInput,
   UpdateStatusByCompanyInput,
+  UpdateStatusIfUnchangedInput,
 } from '../domain/port/job-application.repository.port';
 
 type Row = {
@@ -98,6 +100,52 @@ export class JobApplicationPrismaRepository implements JobApplicationRepositoryP
           : null,
       },
     });
+    return mapRow(row);
+  }
+
+  async findActiveByCompanyRef({
+    slackUserId,
+    companyRef,
+  }: FindActiveByCompanyRefInput): Promise<JobApplicationRecord | null> {
+    const row = await this.prisma.jobApplication.findFirst({
+      where: {
+        slackUserId,
+        company: { contains: companyRef, mode: Prisma.QueryMode.insensitive },
+        status: { notIn: TERMINAL_STATUSES },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!row) {
+      return null;
+    }
+    return mapRow(row);
+  }
+
+  async updateStatusIfUnchanged({
+    slackUserId,
+    id,
+    expectedStatus,
+    status,
+    nextFollowUpAt,
+  }: UpdateStatusIfUnchangedInput): Promise<JobApplicationRecord | null> {
+    const result = await this.prisma.jobApplication.updateMany({
+      where: { id, slackUserId, status: expectedStatus },
+      data: {
+        status,
+        nextFollowUpAt: nextFollowUpAt
+          ? plainDateToUtcDate(nextFollowUpAt)
+          : null,
+      },
+    });
+    if (result.count === 0) {
+      return null;
+    }
+    const row = await this.prisma.jobApplication.findFirst({
+      where: { id, slackUserId },
+    });
+    if (!row) {
+      return null;
+    }
     return mapRow(row);
   }
 

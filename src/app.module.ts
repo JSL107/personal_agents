@@ -13,6 +13,8 @@ import { CtoModule } from './agent/cto/cto.module';
 import { HumanizeResearchModule } from './agent/humanize-research/humanize-research.module';
 import { HumanizeRulePrApplier } from './agent/humanize-research/infrastructure/humanize-rule-pr.applier';
 import { ImpactReporterModule } from './agent/impact-reporter/impact-reporter.module';
+import { HeldJobApplicationWriteApplier } from './agent/job-application/infrastructure/held-job-application-write.applier';
+import { JobApplicationModule } from './agent/job-application/job-application.module';
 import { PaperRecommendModule } from './agent/paper-recommend/paper-recommend.module';
 import { PmWriteBackApplier } from './agent/pm/infrastructure/pm-write-back.applier';
 import { PmAgentModule } from './agent/pm/pm-agent.module';
@@ -22,6 +24,7 @@ import { ProductGoalApplier } from './agent/po-shadow/infrastructure/product-goa
 import { PoShadowModule } from './agent/po-shadow/po-shadow.module';
 import { ProductGoalModule } from './agent/po-shadow/product-goal.module';
 import { StockModule } from './agent/stock/stock.module';
+import { HeldVacationWriteApplier } from './agent/vacation/infrastructure/held-vacation-write.applier';
 import { VacationModule } from './agent/vacation/vacation.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
@@ -147,6 +150,8 @@ import { WebhookModule } from './webhook/webhook.module';
         ProductGoalApplier,
         IdeaScheduleApplier,
         HeldScheduleRegisterApplier,
+        HeldVacationWriteApplier,
+        HeldJobApplicationWriteApplier,
         InstagramReelPublishApplier,
       ],
       // 레버 3b: apply 후 결과 검증 — DOCS_AUDIT_PR 의 PR open 을 getPullRequest 로 재확인.
@@ -171,6 +176,8 @@ import { WebhookModule } from './webhook/webhook.module';
         IdeaTriageModule,
         InstagramModule,
         ScheduleModule,
+        VacationModule,
+        JobApplicationModule,
       ],
     }),
     SlackModule,
