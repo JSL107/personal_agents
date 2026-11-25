@@ -10,6 +10,7 @@ import {
   getRealHomeDir,
   killProcessTree,
 } from '../../model-router/infrastructure/cli-process.util';
+import { AiWeeklyCompanyScope } from '../domain/ai-weekly-company';
 import {
   AiWeeklyError,
   AiWeeklyErrorCode,
@@ -20,6 +21,11 @@ import { AiWeeklyPeriod } from '../domain/ai-weekly-period';
 const TIMEOUT_MS = 120_000;
 const STDOUT_LIMIT = 1_048_576;
 const STDERR_LIMIT = 4_096;
+
+interface AiWeeklyRunInput {
+  period: AiWeeklyPeriod;
+  company: AiWeeklyCompanyScope;
+}
 
 interface ScriptProcessInput {
   cwd: string;
@@ -36,7 +42,7 @@ interface ScriptExit {
 
 @Injectable()
 export class AiWeeklyMetricsRunner {
-  async run(period: AiWeeklyPeriod): Promise<unknown> {
+  async run({ period, company }: AiWeeklyRunInput): Promise<unknown> {
     const cwd = process.cwd();
     const scriptPath = join(cwd, 'scripts', 'ai-weekly-metrics.py');
     if (!existsSync(scriptPath)) {
@@ -53,6 +59,12 @@ export class AiWeeklyMetricsRunner {
       formatKstIsoDateTime(period.since),
       '--until',
       formatKstIsoDateTime(period.until),
+      // 자식 env 는 격리되므로(buildSafeChildEnv) 회사 기준은 인자로 넘긴다. `=` 로 붙여야
+      // '-' 로 시작하는 키워드를 argparse 가 옵션으로 오인하지 않는다.
+      ...(company.org ? [`--company-org=${company.org}`] : []),
+      ...company.pathKeywords.map(
+        (keyword) => `--company-path-keyword=${keyword}`,
+      ),
     ];
     const environment = buildSafeChildEnv({ cwd, homeDir: getRealHomeDir() });
     const scriptExit = await runScript({ cwd, argumentsList, environment });

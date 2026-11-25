@@ -28,7 +28,7 @@ import {
   findThreadForComment,
   resolveHarvestSignal,
 } from '../domain/harvest-signal';
-import { LEARNING_REPOS } from '../domain/learning-repo';
+import { resolveLearningRepos } from '../domain/learning-repo';
 import {
   PR_REVIEW_FINDING_REPOSITORY_PORT,
   PrReviewFindingRepositoryPort,
@@ -208,7 +208,7 @@ export class HarvestReviewSignalsUsecase {
   // 수십 개 수준이고 조회는 밀리초라, 아끼는 비용보다 유실이 비싸다.
   // 집계는 요약에 곁들이는 정보이므로 실패하면 수확 결과만 그대로 보고한다.
   //
-  // 대상은 학습 규약이 실리는 레포(`LEARNING_REPOS`)이고, 레포마다 따로 센다. 전 레포를 합산하면
+  // 대상은 학습 규약이 실리는 레포(`resolveLearningRepos`)이고, 레포마다 따로 센다. 전 레포를 합산하면
   // 규약이 실리지도 않는 레포의 결론이 섞여 "규약을 실은 뒤 나아졌나" 에 답할 수 없다 —
   // 실측(2026-08-26)상 ARCHITECTURE 최근 14일 기각 4건 중 1건이 규약 미적용 레포였다.
   // 학습 레포끼리 합쳐도 같은 문제가 생긴다(표본이 큰 레포가 작은 레포의 변화를 덮는다).
@@ -217,8 +217,11 @@ export class HarvestReviewSignalsUsecase {
       const windowMs = ADOPTION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
       const now = Date.now();
       const recentSince = new Date(now - windowMs);
+      const learningRepos = resolveLearningRepos(
+        this.configService.get<string>('PR_REVIEW_EXTRA_LEARNING_REPOS'),
+      );
       const perRepo = await Promise.all(
-        LEARNING_REPOS.map(async (repo) => {
+        learningRepos.map(async (repo) => {
           // 직전 구간은 [2배 전, 최근 구간 시작). 같은 길이라야 두 비율을 나란히 둘 수 있다.
           const [recent, prior] = await Promise.all([
             this.repository.countAdoptionByCategory({

@@ -29,6 +29,8 @@ describe('AiToolWeeklyAutopilotTask', () => {
     values = {
       AUTOPILOT_HARNESS_TARGET: 'C0HARNESS',
       IMPACT_REPORT_GITHUB_AUTHOR: 'user',
+      COMPANY_GITHUB_ORG: 'acme-corp',
+      COMPANY_PATH_KEYWORDS: 'acme-, example',
     };
     task = new AiToolWeeklyAutopilotTask(
       { get: (key: string) => values[key] } as never,
@@ -50,7 +52,7 @@ describe('AiToolWeeklyAutopilotTask', () => {
 
   it('기간과 상세 실패 옵션으로 PR을 조회하고 보고서를 반환한다', async () => {
     github.listAuthorMergedPullRequestsSince.mockResolvedValue([
-      { repo: 'schoolbell-e/a', mergedAt: '2026-11-03T00:00:00Z' },
+      { repo: 'Acme-Corp/a', mergedAt: '2026-11-03T00:00:00Z' },
     ]);
     await expect(task.run(context)).resolves.toMatchObject({
       skip: false,
@@ -73,6 +75,40 @@ describe('AiToolWeeklyAutopilotTask', () => {
           personal: 0,
           truncated: false,
         },
+      }),
+    );
+  });
+
+  it('회사 기준을 집계 스크립트에도 넘긴다', async () => {
+    await task.run(context);
+    expect(runner.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        company: { org: 'acme-corp', pathKeywords: ['acme-', 'example'] },
+      }),
+    );
+  });
+
+  it('조직명이 없으면 회사로 가르지 않고 경고를 남긴다', async () => {
+    delete values.COMPANY_GITHUB_ORG;
+    github.listAuthorMergedPullRequestsSince.mockResolvedValue([
+      { repo: 'acme-corp/a', mergedAt: '2026-11-03T00:00:00Z' },
+    ]);
+    const warn = jest.spyOn(
+      (task as never as { logger: { warn: (message: string) => void } }).logger,
+      'warn',
+    );
+    await task.run(context);
+    expect(warn).toHaveBeenCalledWith(
+      'COMPANY_GITHUB_ORG 미설정 — 회사 작업을 가르지 않음',
+    );
+    expect(runner.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        company: expect.objectContaining({ org: null }),
+      }),
+    );
+    expect(format).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pullRequests: expect.objectContaining({ company: 0, personal: 1 }),
       }),
     );
   });

@@ -26,7 +26,7 @@ export interface CategoryAdoption {
 }
 
 /**
- * 레포 하나의 카테고리 채택률. 학습 규약이 실리는 레포가 여럿이라(`LEARNING_REPOS`) 어느 레포의
+ * 레포 하나의 카테고리 채택률. 학습 규약이 실리는 레포가 여럿이라(`resolveLearningRepos`) 어느 레포의
  * 값인지 함께 싣는다 — 레포끼리 합산하면 한 레포의 규약 효과가 다른 레포 결론에 묻힌다.
  */
 export interface RepoCategoryAdoption extends CategoryAdoption {

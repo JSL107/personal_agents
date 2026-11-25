@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 205개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 208개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -153,6 +153,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 |---|---|---|
 | `PR_REVIEW_LOOP_ENABLED` | ❌ | PR 리뷰 루프 마스터 스위치. `true` (string) 일 때만 스윕이 동작한다. |
 | `PR_REVIEW_INLINE_REPOS` | ❌ | 인라인 코멘트 게시를 허용할 repo allowlist (콤마 구분 "owner/repo"). |
+| `PR_REVIEW_EXTRA_LEARNING_REPOS` | ❌ | 기각에서 학습한 규약을 실을 추가 레포 (콤마 구분 "owner/repo"). 자기 레포는 항상 대상이다. |
 | `PR_REVIEW_REPO_READ_REPOS` | ❌ | 리뷰 모델이 PR head 시점 레포 사본을 읽기 전용으로 열 레포 (콤마 구분 "owner/repo"). |
 | `PR_REVIEW_INLINE_DRYRUN` | ❌ | 연습 모드가 기본값 — `false` (string) 일 때만 실제 게시하고, 미설정을 포함한 그 외에는 GitHub 게시도 카드 저장도 없이 Slack 요약만 낸다. |
 | `PR_REVIEW_INLINE_MAX` | ❌ | PR 당 게시 상한. MUST_FIX 우선 정렬 후 절단. 미설정/비정상 값 → 4. |
@@ -247,6 +248,8 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `STALE_DATA_CUTOFF_DAYS` | ❌ | OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위). |
 | `PM_STALE_DEMOTE_DAYS` | ❌ | PM 데일리 플랜 정체 태스크 강등 임계값. 미설정 시 default 5일. |
 | `HERMES_CRON_OUTPUT_DIR` | ❌ | owner 대화 답변이 열 수 있는 Hermes cron 출력 폴더. 미설정 시 조회하지 않는다. |
+| `COMPANY_GITHUB_ORG` | ❌ | 회사 GitHub 조직명. 머지 PR 소유자·세션 레포 remote 를 이 조직과 비교한다. 미설정 시 회사로 가르지 않는다 — 전부 개인으로 세고 보고서에 "회사 PR 0건" 경고가 뜬다. |
+| `COMPANY_PATH_KEYWORDS` | ❌ | remote 를 못 읽은 세션 경로를 회사로 추정할 키워드(콤마 구분, 대소문자 무시). |
 | `IDEA_CHANNEL_ID` | ❌ | — |
 | `AI_CLI_ENV_SYNC_REPO` | ❌ | AI CLI 환경 스냅샷 동기화. AI_CLI_ENV_SYNC_REPO 미설정 시 export/apply task 모두 skip. |
 | `AI_CLI_ENV_SYNC_DIR` | ❌ | Snapshot repo의 로컬 clone 경로. 미설정 시 ~/.ai-cli-env-sync. |

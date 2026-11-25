@@ -1604,12 +1604,14 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
   const buildUsecase = (
     deps: ReturnType<typeof makeDeps>,
     withRepository = true,
+    env: Record<string, string> = {},
   ): ReviewPullRequestUsecase =>
     new ReviewPullRequestUsecase(
       deps.modelRouter as never,
       { execute: deps.agentRunServiceExecute } as never,
       deps.githubClient as never,
       withRepository ? (deps.findingRepository as never) : undefined,
+      { get: (key: string) => env[key] } as never,
     );
 
   const promptOf = (deps: ReturnType<typeof makeDeps>): string =>
@@ -1757,7 +1759,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
   });
 
   it('학습을 연 회사 레포에는 그 레포의 기각만 규약으로 싣고, 손으로 적은 규약은 싣지 않는다', async () => {
-    // 학습 허용 목록(`LEARNING_REPOS`)은 기각 규약에만 적용된다. 손으로 적은 규약은
+    // 학습 허용 목록(`PR_REVIEW_EXTRA_LEARNING_REPOS`)은 기각 규약에만 적용된다. 손으로 적은 규약은
     // personal_agents 사정이라 회사 레포에 실리면 틀린 규약이 정탐을 지운다.
     const deps = makeDeps();
     // 상세를 갈아끼웠으므로 재조회도 같은 커밋을 돌려줘야 스냅샷이 섞이지 않은 것으로 본다.
@@ -1770,7 +1772,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
       number: 1,
       title: 'feat: 벌점 집계',
       body: '',
-      repo: 'schoolbell-e/sbe-spinoff-workspace',
+      repo: 'acme-corp/acme-workspace',
       url: 'u',
       baseRef: 'staging',
       baseSha: 'base-sha',
@@ -1797,15 +1799,17 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
       ),
     ]);
 
-    await buildUsecase(deps).execute({
-      prRef: 'schoolbell-e/sbe-spinoff-workspace#1',
+    await buildUsecase(deps, true, {
+      PR_REVIEW_EXTRA_LEARNING_REPOS: 'acme-corp/acme-workspace',
+    }).execute({
+      prRef: 'acme-corp/acme-workspace#1',
       slackUserId: 'U1',
     });
 
     expect(
       deps.findingRepository.findRejectionsForConventions,
     ).toHaveBeenCalledWith(
-      expect.objectContaining({ repo: 'schoolbell-e/sbe-spinoff-workspace' }),
+      expect.objectContaining({ repo: 'acme-corp/acme-workspace' }),
     );
     const prompt = promptOf(deps);
     expect(prompt).toContain('기각된 지적과 그 이유');
