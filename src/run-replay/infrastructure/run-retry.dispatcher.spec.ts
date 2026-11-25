@@ -5,11 +5,13 @@ describe('RunRetryDispatcher', () => {
   const replay = { prepare: jest.fn() };
   const runner = { run: jest.fn() };
   const preview = { execute: jest.fn() };
+  const countPreviews = { execute: jest.fn() };
   const dispatcher = new RunRetryDispatcher(
     repository as never,
     replay as never,
     runner as never,
     preview as never,
+    countPreviews as never,
   );
   const input = {
     source: 'SLACK_MESSAGE' as const,
@@ -59,6 +61,7 @@ describe('RunRetryDispatcher', () => {
         },
       },
     });
+    countPreviews.execute.mockResolvedValue(0);
     preview.execute.mockResolvedValue({ id: 'p1' });
     expect((await dispatcher.dispatch(input)).preview?.id).toBe('p1');
     expect(preview.execute).toHaveBeenCalledWith(
@@ -71,6 +74,42 @@ describe('RunRetryDispatcher', () => {
       }),
     );
   });
+  it.each([
+    ['APPLIED', '이미 다시 실행해 등록했어요'],
+    ['PENDING', '확인 카드가 이미 떠 있어요'],
+  ])(
+    '같은 실행의 %s 카드가 있으면 새 카드를 만들지 않는다',
+    async (status, message) => {
+      repository.findById.mockResolvedValue({
+        id: 123,
+        status: 'SUCCEEDED',
+        agentType: 'SCHEDULE',
+        inputSnapshot: {
+          slackUserId: 'U1',
+          parsedIntent: {
+            kind: 'REGISTER',
+            title: '일정',
+            dueDate: { year: 2026, month: 11, day: 25 },
+            heldWrite: { action: 'REGISTER' },
+          },
+        },
+      });
+      countPreviews.execute.mockImplementation(
+        async (query: { status: string }) => (query.status === status ? 1 : 0),
+      );
+      const outcome = await dispatcher.dispatch(input);
+      expect(outcome.formattedText).toContain(message);
+      expect(outcome.preview).toBeUndefined();
+      expect(preview.execute).not.toHaveBeenCalled();
+      expect(countPreviews.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'HELD_SCHEDULE_REGISTER',
+          payloadPath: ['sourceRunId'],
+          payloadValue: 123,
+        }),
+      );
+    },
+  );
 });
 
 describe('RunRetryDispatcher 안내', () => {
@@ -78,11 +117,13 @@ describe('RunRetryDispatcher 안내', () => {
   const replay = { prepare: jest.fn() };
   const runner = { run: jest.fn() };
   const preview = { execute: jest.fn() };
+  const countPreviews = { execute: jest.fn() };
   const dispatcher = new RunRetryDispatcher(
     repository as never,
     replay as never,
     runner as never,
     preview as never,
+    countPreviews as never,
   );
   const input = {
     source: 'SLACK_MESSAGE' as const,

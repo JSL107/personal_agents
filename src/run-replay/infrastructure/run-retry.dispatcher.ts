@@ -5,8 +5,13 @@ import {
   AgentRunRepositoryPort,
 } from '../../agent-run/domain/port/agent-run.repository.port';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { CountPreviewsByPayloadUsecase } from '../../preview-gate/application/count-previews-by-payload.usecase';
 import { CreatePreviewUsecase } from '../../preview-gate/application/create-preview.usecase';
-import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
+import {
+  PREVIEW_KIND,
+  PREVIEW_STATUS,
+  PreviewStatus,
+} from '../../preview-gate/domain/preview-action.type';
 import { DispatchInput } from '../../router/domain/idaeri-router.port';
 import {
   AgentDispatcher,
@@ -30,6 +35,7 @@ export class RunRetryDispatcher implements AgentDispatcher {
     private readonly replay: ReplayFailedRunUsecase,
     private readonly runner: ReplayReplyRunner,
     private readonly createPreview: CreatePreviewUsecase,
+    private readonly countPreviews: CountPreviewsByPayloadUsecase,
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
@@ -75,6 +81,13 @@ export class RunRetryDispatcher implements AgentDispatcher {
       };
     }
     if (target.kind === 'HELD_SCHEDULE') {
+      // 멱등 기록(ApplyProgress)은 카드 단위라, 같은 실행으로 카드를 두 장 띄워 둘 다 누르면 두 번
+      // 등록된다. 대기 중이거나 이미 승인된 카드가 있으면 새 카드를 만들지 않는다. 만료·취소된 카드는
+      // 다시 만들 수 있다.
+      const handled = await this.findHandledCard(runId);
+      if (handled !== null) {
+        return this.reply(handled);
+      }
       const title = escapeSlackMrkdwn(target.title);
       const date = toKoreanDate(plainDateToUtcDate(target.dueDate));
       const text = `*다시 실행* — 실행 #${runId} 에서 질문으로 보고 멈춘 일정 등록이에요.\n• 제목: ${title}\n• 날짜: ${date}\n등록할까요?`;
@@ -104,6 +117,23 @@ export class RunRetryDispatcher implements AgentDispatcher {
     return this.reply(
       `실패했거나 질문으로 멈춘 실행만 다시 돌릴 수 있어요. 실행 #${runId} 은 ${status[run.status] ?? run.status} 상태예요.`,
     );
+  }
+
+  private async findHandledCard(runId: number): Promise<string | null> {
+    const countByStatus = (status: PreviewStatus): Promise<number> =>
+      this.countPreviews.execute({
+        kind: PREVIEW_KIND.HELD_SCHEDULE_REGISTER,
+        payloadPath: ['sourceRunId'],
+        payloadValue: runId,
+        status,
+      });
+    if ((await countByStatus(PREVIEW_STATUS.APPLIED)) > 0) {
+      return `실행 #${runId} 의 일정은 이미 다시 실행해 등록했어요.`;
+    }
+    if ((await countByStatus(PREVIEW_STATUS.PENDING)) > 0) {
+      return `실행 #${runId} 의 확인 카드가 이미 떠 있어요. 그 카드에서 등록할지 골라 주세요.`;
+    }
+    return null;
   }
 
   private reply(formattedText: string): DispatchOutcome {

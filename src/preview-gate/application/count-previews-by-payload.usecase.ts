@@ -9,7 +9,8 @@ import { PreviewStatus } from '../domain/preview-action.type';
 export interface CountPreviewsByPayloadInput {
   readonly kind: string;
   readonly payloadPath: string[];
-  readonly payloadValue: string;
+  // JSON 안의 값과 타입까지 같아야 일치한다 — 숫자로 저장된 id 는 숫자로 넘긴다.
+  readonly payloadValue: string | number;
   readonly status?: PreviewStatus;
 }
 

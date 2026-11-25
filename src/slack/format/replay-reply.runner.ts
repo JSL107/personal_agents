@@ -32,11 +32,14 @@ export class ReplayReplyRunner {
           outcome.result.plan,
           outcome.result.inputTruncation,
         );
-        return withRunId({ agentRunId: outcome.agentRunId, formatted: report });
+        return toReplayReply({
+          agentRunId: outcome.agentRunId,
+          formatted: report,
+        });
       }
       case 'WORK_REVIEWER': {
         const outcome = await prepared.run();
-        return withRunId({
+        return toReplayReply({
           agentRunId: outcome.agentRunId,
           formatted: formatDailyReview(outcome.result),
         });
@@ -48,18 +51,21 @@ export class ReplayReplyRunner {
           prTitle: outcome.prTitle,
           review: outcome.result,
         });
-        return withRunId({ agentRunId: outcome.agentRunId, formatted: report });
+        return toReplayReply({
+          agentRunId: outcome.agentRunId,
+          formatted: report,
+        });
       }
       case 'IMPACT_REPORTER': {
         const outcome = await prepared.run();
-        return withRunId({
+        return toReplayReply({
           agentRunId: outcome.agentRunId,
           formatted: formatImpactReport(outcome.result),
         });
       }
       case 'PO_SHADOW': {
         const outcome = await prepared.run();
-        return withRunId({
+        return toReplayReply({
           agentRunId: outcome.agentRunId,
           formatted: formatPoShadowReport(outcome.result),
         });
@@ -70,14 +76,14 @@ export class ReplayReplyRunner {
           outcome.result,
           this.humanizeService,
         );
-        return withRunId({
+        return toReplayReply({
           agentRunId: outcome.agentRunId,
           formatted: formatEvaluationOutput(humanized),
         });
       }
       case 'CEO': {
         const outcome = await prepared.run();
-        return withRunId({
+        return toReplayReply({
           agentRunId: outcome.agentRunId,
           formatted: formatCeoMetaOutput(outcome.result),
         });
@@ -92,7 +98,7 @@ export class ReplayReplyRunner {
           frameCount: 0,
           transcriptSource: null,
         };
-        return withRunId({
+        return toReplayReply({
           agentRunId: outcome.agentRunId,
           formatted: formatVideoWatch(outcome.result, report),
         });
@@ -133,7 +139,7 @@ export class ReplayReplyRunner {
   }
 }
 
-const withRunId = ({
+const toReplayReply = ({
   agentRunId,
   formatted,
 }: {

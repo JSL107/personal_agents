@@ -18,6 +18,11 @@ const KEEP_ORIGINAL_ON_REJECTION: ReadonlySet<ReplayRejectionCode> = new Set([
   ReplayRejectionCode.UNKNOWN_AGENT_TYPE,
 ]);
 
+// /retry-run — FAILED AgentRun 의 inputSnapshot 으로 동일 작업을 재실행 (OPS-5).
+// 판정·디스패치·재시도 계보는 콘솔 재시도 버튼과 함께 쓰는 `ReplayFailedRunUsecase` 에 있고,
+// 실행과 결과 문구는 자연어 재실행과 함께 쓰는 `ReplayReplyRunner` 에 있다. 여기는 Slack ack 와 응답만 한다.
+//
+// C-4 Phase 9 — registerRetryRunHandler fn → @Injectable() class.
 @Injectable()
 export class RetryRunHandler implements SlackHandler {
   private readonly logger = new Logger(RetryRunHandler.name);
@@ -50,6 +55,7 @@ export class RetryRunHandler implements SlackHandler {
       if (prepared.kind === 'REJECTED') {
         await respond({
           response_type: 'ephemeral',
+          // 실행 기록 자체를 못 찾은 경우와 처음 보는 종류는 종전대로 진행 문구를 덮지 않는다.
           ...(KEEP_ORIGINAL_ON_REJECTION.has(prepared.code)
             ? {}
             : { replace_original: true }),
