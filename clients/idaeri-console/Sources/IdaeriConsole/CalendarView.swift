@@ -274,8 +274,15 @@ struct CalendarView: View {
                 await reloadUndated()
             }
         }
-        // 일정은 SSE 에 실리지 않아 Slack 등 콘솔 밖에서 바뀐 것은 다시 읽어야 보인다.
-        // 다른 앱을 보다가 돌아오는 순간이 사용자가 확인하러 오는 때다.
+        // Slack·자동 수집 등 콘솔 밖에서 일정이 바뀌면 백엔드가 신호를 보낸다.
+        .onChange(of: store.scheduleRevision) { _ in
+            Task {
+                await reload()
+                await reloadUndated()
+            }
+        }
+        // 신호는 연결이 살아 있는 동안만 온다. 끊긴 사이의 변경은 연결 복구(위)나
+        // 다른 앱을 보다가 돌아오는 순간에 잡는다.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task {
                 await reload()

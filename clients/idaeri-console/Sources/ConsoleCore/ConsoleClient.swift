@@ -386,8 +386,8 @@ public actor ConsoleClient {
         return try decodeLedgerResponse(data)
     }
 
-    /// `GET /v1/console/schedules`. 캘린더 탭이 열릴 때와 상태 변경 직후에만 부른다 —
-    /// 일정은 초 단위로 변하지 않으므로 SSE 에 싣지 않는다.
+    /// `GET /v1/console/schedules`. 캘린더 탭이 열릴 때·상태 변경 직후·`schedule.changed` 를
+    /// 받았을 때 부른다 — SSE 는 바뀌었다는 신호만 싣고, 내용은 보고 있는 달을 여기서 다시 받는다.
     public func fetchSchedules(from: String, to: String) async throws -> [ScheduleItem] {
         guard let request = buildScheduleListRequest(baseURL: baseURL, from: from, to: to) else {
             throw ConsoleClientError.notHTTP
