@@ -564,6 +564,34 @@ describe('ScheduleDispatcher', () => {
     expect(outcome.formattedText).toContain('자동차세');
   });
 
+  it('등록이 끝난 직전 턴의 날짜는 날짜 없는 다음 문장에 붙이지 않고 묻는다', async () => {
+    const usecase = createUsecase();
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      createAnswer(),
+      createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
+    );
+
+    const outcome = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '실행번호 14034에 대해서 다시 해봐.',
+      priorTurns: [
+        {
+          role: 'user',
+          text: '오늘 자동차세 등록해줘',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+      ],
+    });
+
+    expect(usecase.execute).not.toHaveBeenCalled();
+    expect(outcome.output).toMatchObject({ kind: 'NEEDS_DATE' });
+  });
+
   it('직전 턴이 다른 워커면 합치지 않는다 — 남의 대화를 제목으로 끌어오지 않는다', async () => {
     const usecase = createUsecase();
     const answer = createAnswer();

@@ -429,11 +429,15 @@ export class ScheduleDispatcher implements AgentDispatcher {
     if (parseScheduleList({ text: prior.text, today }) !== null) {
       return { command, mergedPriorText: prior.text };
     }
+    // 직전 턴이 제목·날짜를 다 갖춘 요청이면 되묻기가 아니었다 — 그 날짜를 이번 문장에 붙이지 않는다.
+    // "오늘로 저 일정을 등록해줄래" 다음의 "실행번호 14034에 대해서 다시 해봐." 가 오늘 일정으로
+    // 등록됐다(2026-11-25 실행 14039).
+    const priorCommand = parseScheduleCommand(prior.text, today);
+    if (priorCommand.kind === 'REGISTER') {
+      return { command };
+    }
     return {
-      command: mergeScheduleCommands(
-        parseScheduleCommand(prior.text, today),
-        command,
-      ),
+      command: mergeScheduleCommands(priorCommand, command),
       mergedPriorText: prior.text,
     };
   }
