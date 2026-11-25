@@ -16,7 +16,7 @@ describe('RunRetryDispatcher', () => {
   const input = {
     source: 'SLACK_MESSAGE' as const,
     slackUserId: 'U1',
-    text: '실행번호 123 다시',
+    text: '실행번호 123 다시 해줘',
   };
   beforeEach(() => jest.resetAllMocks());
   it('실패 실행은 재실행 결과를 전달한다', async () => {
@@ -127,7 +127,7 @@ describe('RunRetryDispatcher 안내', () => {
   const input = {
     source: 'SLACK_MESSAGE' as const,
     slackUserId: 'U1',
-    text: '실행번호 123 다시',
+    text: '실행번호 123 다시 해줘',
   };
   beforeEach(() => jest.resetAllMocks());
   it('번호가 없으면 번호를 요청한다', async () => {
