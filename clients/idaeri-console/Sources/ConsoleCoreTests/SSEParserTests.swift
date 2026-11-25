@@ -82,6 +82,20 @@ func runSSEParserTests(_ t: TestRunner) {
         t.expectEqual(buffer, "", "미지 이벤트 블록도 버퍼에서 소비")
     }
 
+    // 페이로드 없는 일정 변경 신호도 디코딩되고, 스토어가 다시 읽을 때를 알린다
+    do {
+        var buffer = "data: {\"type\":\"schedule.changed\"}\n\n"
+        let events = parseSSELine(&buffer)
+        t.expectEqual(events.count, 1, "schedule.changed 파싱")
+        if case .scheduleChanged = events.first {
+            let store = ConsoleStore()
+            store.apply(event: .scheduleChanged)
+            t.expectEqual(store.scheduleRevision, 1, "신호마다 일정 리비전 증가")
+        } else {
+            t.fail("이벤트는 scheduleChanged 여야 함")
+        }
+    }
+
     // SSE keep-alive 주석(`:` 시작)·기타 필드 라인은 무시
     do {
         var buffer = ": keep-alive\n\ndata: {\"type\":\"state.changed\",\"agentType\":\"PM\",\"state\":\"COMPLETED\"}\n\n"

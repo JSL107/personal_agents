@@ -332,6 +332,8 @@ public enum ConsoleEvent: Decodable, Sendable {
     case commandRejected(commandId: String, reason: String)
     case commandInfo(commandId: String, message: String)
     case commandAnswered(commandId: String, message: String)
+    /// 일정이 바뀌었다는 신호뿐이다 — 캘린더가 보고 있는 달을 다시 조회한다.
+    case scheduleChanged
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -386,6 +388,8 @@ public enum ConsoleEvent: Decodable, Sendable {
                 commandId: try container.decode(String.self, forKey: .commandId),
                 message: try container.decode(String.self, forKey: .message)
             )
+        case "schedule.changed":
+            self = .scheduleChanged
         case "command.answered":
             self = .commandAnswered(
                 commandId: try container.decode(String.self, forKey: .commandId),

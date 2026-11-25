@@ -12,6 +12,10 @@ struct CalendarView: View {
     /// 연결 실패 안내에 띄울 백엔드 주소. 어디에 못 붙었는지가 없으면 "실행했는지 확인하라"는
     /// 말이 어느 주소를 두고 하는 말인지 알 수 없다(`AppRootView.approvalFailureReason` 과 같다).
     let baseURLLabel: String
+    /// 백엔드 연결 상태. 앱과 백엔드를 함께 띄우면(`pnpm dev`) 첫 조회가 부팅 전 백엔드에
+    /// 닿아 실패하고, 탭이 처음 나타날 때 한 번만 조회하므로 그대로 비어 있었다 —
+    /// 연결이 살아나는 순간 다시 읽는다.
+    let connection: ConnectionStatus
 
     @State private var year: Int
     @State private var month: Int
@@ -29,6 +33,10 @@ struct CalendarView: View {
     @State private var showingUndated = false
     @State private var undatedFailure: String?
     @State private var expandedId: Int?
+    /// 조회 세대. 변경 신호가 연달아 오면 같은 달 조회가 겹치고, 먼저 보낸 요청이 늦게 도착해
+    /// 최신 목록을 덮을 수 있다 — 달만 비교해서는 그것을 못 거른다. 가장 마지막 조회만 반영한다.
+    @State private var reloadGeneration = 0
+    @State private var undatedGeneration = 0
 
     /// 오늘 날짜 키(`yyyy-MM-dd`). **`let` 이면 안 된다** — 이 앱은 켜 둔 채로 쓰는 상주형이라
     /// 자정을 넘기면 생성 시점 문자열이 어제로 굳고, 오늘 강조가 어제 칸에 남고 "오늘" 버튼도
@@ -54,6 +62,7 @@ struct CalendarView: View {
         store: ConsoleStore,
         client: ConsoleClient,
         baseURLLabel: String,
+        connection: ConnectionStatus = .live,
         initialYear: Int? = nil,
         initialMonth: Int? = nil,
         initialSelectedDay: Int? = nil,
@@ -64,6 +73,7 @@ struct CalendarView: View {
         self.store = store
         self.client = client
         self.baseURLLabel = baseURLLabel
+        self.connection = connection
         let now = Calendar(identifier: .gregorian)
         let resolvedYear = initialYear ?? now.component(.year, from: Date())
         let resolvedMonth = initialMonth ?? now.component(.month, from: Date())
@@ -258,6 +268,30 @@ struct CalendarView: View {
         .task {
             await reload()
             await reloadUndated()
+        }
+        .onChange(of: connection) { connection in
+            guard connection == .live else {
+                return
+            }
+            Task {
+                await reload()
+                await reloadUndated()
+            }
+        }
+        // Slack·자동 수집 등 콘솔 밖에서 일정이 바뀌면 백엔드가 신호를 보낸다.
+        .onChange(of: store.scheduleRevision) { _ in
+            Task {
+                await reload()
+                await reloadUndated()
+            }
+        }
+        // 신호는 연결이 살아 있는 동안만 온다. 끊긴 사이의 변경은 연결 복구(위)나
+        // 다른 앱을 보다가 돌아오는 순간에 잡는다.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task {
+                await reload()
+                await reloadUndated()
+            }
         }
         // 자정을 넘기면 오늘이 바뀐다. 타이머로 재는 대신 시스템이 알려 주는 것을 받는다 —
         // 타이머는 절전·시간대 변경·시각 수동 조정에서 어긋난다.
@@ -962,13 +996,15 @@ struct CalendarView: View {
         // 내용만 10월인 상태가 된다 — 오류가 나지 않아 눈치채기 어려운 쪽이다.
         let requestedYear = year
         let requestedMonth = month
-        await MainActor.run {
+        let generation = await MainActor.run { () -> Int in
+            reloadGeneration += 1
             isLoading = true
             // 묵은 실패 표시를 지운다. 실패가 로딩보다 우선이라, 남겨 두면 실패 후 달을
             // 옮기거나 다시 읽는 동안에도 끝난 옛 오류가 이번 요청의 결과처럼 보인다.
             // 격자가 낡은 데이터로 되돌아가지 않는 것은 `visibleSchedules` 가 실패 여부와
             // **담긴 달** 을 함께 보기 때문이다.
             loadFailure = nil
+            return reloadGeneration
         }
         let from = String(format: "%04d-%02d-01", requestedYear, requestedMonth)
         let to = String(format: "%04d-%02d-%02d", requestedYear, requestedMonth, lastDayOfMonth)
@@ -977,14 +1013,18 @@ struct CalendarView: View {
             await MainActor.run {
                 // 늦게 도착한 옛 요청은 로딩도 끄지 않는다 — 끄면 뒤에 뜬 새 요청이 아직
                 // 도는 중인데 화면은 다 받은 것처럼 보인다.
-                guard requestedYear == year, requestedMonth == month else { return }
+                guard generation == reloadGeneration, requestedYear == year, requestedMonth == month else {
+                    return
+                }
                 store.apply(schedules: items)
                 loadFailure = nil
                 isLoading = false
             }
         } catch {
             await MainActor.run {
-                guard requestedYear == year, requestedMonth == month else { return }
+                guard generation == reloadGeneration, requestedYear == year, requestedMonth == month else {
+                    return
+                }
                 loadFailure = failureReason(error)
                 isLoading = false
             }
@@ -992,9 +1032,16 @@ struct CalendarView: View {
     }
 
     private func reloadUndated() async {
+        let generation = await MainActor.run { () -> Int in
+            undatedGeneration += 1
+            return undatedGeneration
+        }
         do {
             let items = try await client.fetchUndated()
             await MainActor.run {
+                guard generation == undatedGeneration else {
+                    return
+                }
                 undated = items
                 undatedFailure = nil
             }
@@ -1005,7 +1052,12 @@ struct CalendarView: View {
             } else {
                 reason = failureReason(error)
             }
-            await MainActor.run { undatedFailure = reason }
+            await MainActor.run {
+                guard generation == undatedGeneration else {
+                    return
+                }
+                undatedFailure = reason
+            }
         }
     }
 
