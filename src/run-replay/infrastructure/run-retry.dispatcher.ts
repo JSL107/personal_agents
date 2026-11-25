@@ -1,5 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { match } from 'ts-pattern';
 
+import {
+  JOB_APPLICATION_REPOSITORY_PORT,
+  JobApplicationRepositoryPort,
+} from '../../agent/job-application/domain/port/job-application.repository.port';
+import { statusLabel } from '../../agent/job-application/infrastructure/job-application.formatter';
+import { ListUsageUsecase } from '../../agent/vacation/application/list-usage.usecase';
+import {
+  PlainDate,
+  plainDateToIso,
+} from '../../agent/vacation/domain/plain-date';
 import {
   AGENT_RUN_REPOSITORY_PORT,
   AgentRunRepositoryPort,
@@ -21,8 +32,18 @@ import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
 import { ReplayReplyRunner } from '../../slack/format/replay-reply.runner';
 import { toKoreanDate } from '../../slack/format/schedule.formatter';
 import { ReplayFailedRunUsecase } from '../application/replay-failed-run.usecase';
-import { classifyRetryTarget } from '../domain/retry-target';
+import {
+  classifyRetryTarget,
+  HeldWriteTarget,
+  isHeldWriteTarget,
+} from '../domain/retry-target';
 import { parseRunRetryRequest } from '../domain/run-retry-request';
+
+interface HeldWriteCardContent {
+  payload: Record<string, unknown>;
+  lines: string[];
+  question: string;
+}
 
 @Injectable()
 export class RunRetryDispatcher implements AgentDispatcher {
@@ -35,6 +56,9 @@ export class RunRetryDispatcher implements AgentDispatcher {
     private readonly runner: ReplayReplyRunner,
     private readonly createPreview: CreatePreviewUsecase,
     private readonly countPreviews: CountPreviewsByPayloadUsecase,
+    private readonly listUsage: ListUsageUsecase,
+    @Inject(JOB_APPLICATION_REPOSITORY_PORT)
+    private readonly applications: JobApplicationRepositoryPort,
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
@@ -103,6 +127,13 @@ export class RunRetryDispatcher implements AgentDispatcher {
       });
       return { ...this.reply(text), preview: { id: preview.id, text } };
     }
+    if (isHeldWriteTarget(target)) {
+      return this.createHeldWriteCard({
+        target,
+        runId,
+        slackUserId: input.slackUserId,
+      });
+    }
     if (target.kind === 'HELD_UNAVAILABLE') {
       return this.reply(
         "이 실행은 질문으로 보고 멈췄지만 다시 실행할 내용이 저장돼 있지 않아요. 원래 문장을 '…해줘' 처럼 다시 말해 주세요.",
@@ -116,6 +147,173 @@ export class RunRetryDispatcher implements AgentDispatcher {
     return this.reply(
       `실패했거나 질문으로 멈춘 실행만 다시 돌릴 수 있어요. 실행 #${runId} 은 ${status[run.status] ?? run.status} 상태예요.`,
     );
+  }
+
+  private async createHeldWriteCard({
+    target,
+    runId,
+    slackUserId,
+  }: {
+    target: HeldWriteTarget;
+    runId: number;
+    slackUserId: string;
+  }): Promise<DispatchOutcome> {
+    const vacation =
+      target.kind === 'HELD_VACATION_REGISTER' ||
+      target.kind === 'HELD_VACATION_CANCEL';
+    const kind = vacation
+      ? PREVIEW_KIND.HELD_VACATION_WRITE
+      : PREVIEW_KIND.HELD_JOB_APPLICATION_WRITE;
+    const applied = await this.countPreviews.execute({
+      kind,
+      payloadPath: ['sourceRunId'],
+      payloadValue: runId,
+      status: PREVIEW_STATUS.APPLIED,
+    });
+    if (applied > 0) {
+      // 승인됐어도 실제로 쓰지 않았을 수 있다(지원 상태가 카드 뒤에 바뀜, 이미 있는 기록) — 처리됐다고만 말한다.
+      return this.reply(
+        `실행 #${runId} 의 확인 카드는 이미 처리됐어요. 다시 하려면 원래 문장을 '…해줘' 처럼 말해 주세요.`,
+      );
+    }
+    const content: HeldWriteCardContent | string = await match(target)
+      .with({ kind: 'HELD_VACATION_REGISTER' }, (registerTarget) => {
+        const lines = [
+          `• 기간: ${this.dateRange({ startDate: registerTarget.startDate, endDate: registerTarget.endDate })}`,
+          `• 반차: ${registerTarget.fraction === 0.5 ? '예' : '아니요'}`,
+        ];
+        if (registerTarget.memo) {
+          lines.push(`• 메모: ${escapeSlackMrkdwn(registerTarget.memo)}`);
+        }
+        return {
+          payload: {
+            sourceRunId: runId,
+            action: 'REGISTER',
+            startDate: registerTarget.startDate,
+            endDate: registerTarget.endDate,
+            ...(registerTarget.memo !== undefined
+              ? { memo: registerTarget.memo }
+              : {}),
+            ...(registerTarget.fraction !== undefined
+              ? { fraction: registerTarget.fraction }
+              : {}),
+          },
+          lines,
+          question: '등록할까요?',
+        };
+      })
+      .with({ kind: 'HELD_VACATION_CANCEL' }, async (cancelTarget) => {
+        const usages = await this.listUsage.execute({ slackUserId });
+        const usage = usages.find(
+          (record) => record.id === cancelTarget.usageId,
+        );
+        if (!usage) {
+          return `취소할 휴가(#${cancelTarget.usageId})를 찾지 못했어요 — 이미 취소됐거나 다른 기록이에요.`;
+        }
+        const lines = [
+          `• 기간: ${this.dateRange({ startDate: usage.startDate, endDate: usage.endDate })}`,
+        ];
+        if (usage.memo) {
+          lines.push(`• 메모: ${escapeSlackMrkdwn(usage.memo)}`);
+        }
+        return {
+          payload: {
+            sourceRunId: runId,
+            action: 'CANCEL',
+            usageId: cancelTarget.usageId,
+          },
+          lines,
+          question: '취소할까요?',
+        };
+      })
+      .with({ kind: 'HELD_JOB_ADD' }, (addTarget) => {
+        const lines = [
+          `• 회사: ${escapeSlackMrkdwn(addTarget.company)}`,
+          `• 직무: ${escapeSlackMrkdwn(addTarget.role)}`,
+          `• 상태: ${statusLabel(addTarget.status ?? 'APPLIED')}`,
+          `• 지원일: ${plainDateToIso(addTarget.appliedAt)}`,
+        ];
+        if (addTarget.deadline) {
+          lines.push(`• 마감: ${plainDateToIso(addTarget.deadline)}`);
+        }
+        if (addTarget.jdUrl) {
+          lines.push(`• 공고 링크: ${escapeSlackMrkdwn(addTarget.jdUrl)}`);
+        }
+        return {
+          payload: {
+            sourceRunId: runId,
+            action: 'ADD',
+            company: addTarget.company,
+            role: addTarget.role,
+            status: addTarget.status ?? 'APPLIED',
+            appliedAt: addTarget.appliedAt,
+            ...(addTarget.jdUrl !== undefined
+              ? { jdUrl: addTarget.jdUrl }
+              : {}),
+            ...(addTarget.deadline !== undefined
+              ? { deadline: addTarget.deadline }
+              : {}),
+          },
+          lines,
+          question: '등록할까요?',
+        };
+      })
+      .with({ kind: 'HELD_JOB_UPDATE_STATUS' }, async (updateTarget) => {
+        const application = await this.applications.findActiveByCompanyRef({
+          slackUserId,
+          companyRef: updateTarget.ref,
+        });
+        if (!application) {
+          return '해당하는 진행 중 지원 건을 찾지 못했어요.';
+        }
+        return {
+          payload: {
+            sourceRunId: runId,
+            action: 'UPDATE_STATUS',
+            applicationId: application.id,
+            expectedStatus: application.status,
+            status: updateTarget.status,
+          },
+          lines: [
+            `• 회사: ${escapeSlackMrkdwn(application.company)}`,
+            `• 직무: ${escapeSlackMrkdwn(application.role)}`,
+            `• 상태: ${statusLabel(application.status)} → ${statusLabel(updateTarget.status)}`,
+          ],
+          question: '변경할까요?',
+        };
+      })
+      .exhaustive();
+    if (typeof content === 'string') {
+      return this.reply(content);
+    }
+    const text = [
+      `*다시 실행* — 실행 #${runId} 에서 질문으로 보고 멈춘 내용이에요.`,
+      ...content.lines,
+      content.question,
+    ].join('\n');
+    const preview = await this.createPreview.execute({
+      slackUserId,
+      kind,
+      payload: content.payload,
+      previewText: text,
+      ttlMs: 30 * 60 * 1000,
+    });
+    return { ...this.reply(text), preview: { id: preview.id, text } };
+  }
+
+  private dateRange({
+    startDate,
+    endDate,
+  }: {
+    startDate: PlainDate;
+    endDate: PlainDate;
+  }): string {
+    const start = plainDateToIso(startDate);
+    const end = plainDateToIso(endDate);
+    if (start === end) {
+      return start;
+    }
+    return `${start} ~ ${end}`;
   }
 
   private async findHandledCard(runId: number): Promise<string | null> {

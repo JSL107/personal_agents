@@ -16,7 +16,7 @@ const STATUS_LABEL: Record<ApplicationStatus, string> = {
   WITHDRAWN: '지원취소',
 };
 
-const statusLabel = (status: ApplicationStatus): string =>
+export const statusLabel = (status: ApplicationStatus): string =>
   STATUS_LABEL[status] ?? status;
 
 // 한 건을 목록 줄로 — 회사 · 직무 (상태) [부가정보].

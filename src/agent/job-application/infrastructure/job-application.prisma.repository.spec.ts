@@ -159,6 +159,81 @@ describe('JobApplicationPrismaRepository', () => {
     expect(update.mock.calls[0][0].data.nextFollowUpAt).toBeNull();
   });
 
+  it('findActiveByCompanyRef 는 요청자의 비종료 회사 최신 건만 조회한다', async () => {
+    const findFirst = jest.fn().mockResolvedValue(baseRow);
+    const prisma = {
+      jobApplication: { findFirst },
+    } as unknown as PrismaService;
+    const repository = new JobApplicationPrismaRepository(prisma);
+
+    const record = await repository.findActiveByCompanyRef({
+      slackUserId: 'U1',
+      companyRef: '토스',
+    });
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        slackUserId: 'U1',
+        company: { contains: '토스', mode: Prisma.QueryMode.insensitive },
+        status: { notIn: ['OFFER', 'REJECTED', 'WITHDRAWN'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(record?.id).toBe(1);
+  });
+
+  it('updateStatusIfUnchanged 는 id·소유자·기존 상태가 일치할 때만 갱신한다', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const findFirst = jest
+      .fn()
+      .mockResolvedValue({ ...baseRow, status: 'SCREENING' });
+    const prisma = {
+      jobApplication: { updateMany, findFirst },
+    } as unknown as PrismaService;
+    const repository = new JobApplicationPrismaRepository(prisma);
+
+    const record = await repository.updateStatusIfUnchanged({
+      slackUserId: 'U1',
+      id: 1,
+      expectedStatus: 'APPLIED',
+      status: 'SCREENING',
+      nextFollowUpAt: { year: 2026, month: 6, day: 23 },
+    });
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: 1, slackUserId: 'U1', status: 'APPLIED' },
+      data: {
+        status: 'SCREENING',
+        nextFollowUpAt: new Date(Date.UTC(2026, 5, 23)),
+      },
+    });
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: 1, slackUserId: 'U1' },
+    });
+    expect(record?.status).toBe('SCREENING');
+  });
+
+  it('updateStatusIfUnchanged 는 상태가 바뀌었으면 다시 조회하지 않고 null 을 반환한다', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 0 });
+    const findFirst = jest.fn();
+    const prisma = {
+      jobApplication: { updateMany, findFirst },
+    } as unknown as PrismaService;
+    const repository = new JobApplicationPrismaRepository(prisma);
+
+    const record = await repository.updateStatusIfUnchanged({
+      slackUserId: 'U1',
+      id: 1,
+      expectedStatus: 'APPLIED',
+      status: 'OFFER',
+      nextFollowUpAt: null,
+    });
+
+    expect(record).toBeNull();
+    expect(findFirst).not.toHaveBeenCalled();
+    expect(updateMany.mock.calls[0][0].data.nextFollowUpAt).toBeNull();
+  });
+
   it('listByUser — 사용자 레코드 매핑 반환', async () => {
     const findMany = jest.fn().mockResolvedValue([baseRow]);
     const prisma = { jobApplication: { findMany } } as unknown as PrismaService;

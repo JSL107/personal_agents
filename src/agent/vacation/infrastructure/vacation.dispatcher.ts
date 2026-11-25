@@ -6,6 +6,7 @@ import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
   findHypotheticalMarker,
   formatHeldWrite,
+  withoutHeldIntent,
 } from '../../../router/domain/hypothetical-utterance';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
 import {
@@ -68,7 +69,10 @@ export class VacationDispatcher implements AgentDispatcher {
         return this.answer(
           input,
           asOf,
-          { action: 'UNKNOWN', heldWrite: { action: intent.action, marker } },
+          {
+            action: 'UNKNOWN',
+            heldWrite: { action: intent.action, marker, intent },
+          },
           this.formatHeldWrite(intent),
         );
       }
@@ -138,7 +142,10 @@ export class VacationDispatcher implements AgentDispatcher {
     });
     return {
       agentRunId: outcome.agentRunId,
-      output: { ...parsedIntent, usedFallback: outcome.result.usedFallback },
+      output: {
+        ...withoutHeldIntent(parsedIntent),
+        usedFallback: outcome.result.usedFallback,
+      },
       modelUsed: outcome.modelUsed,
       formattedText:
         notice === undefined

@@ -3,7 +3,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { buildParsePromptWithContext } from '../../../fact-answer/domain/parse-context';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
-import { findHypotheticalMarker } from '../../../router/domain/hypothetical-utterance';
+import {
+  findHypotheticalMarker,
+  withoutHeldIntent,
+} from '../../../router/domain/hypothetical-utterance';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
 import {
   AgentDispatcher,
@@ -65,7 +68,10 @@ export class JobApplicationDispatcher implements AgentDispatcher {
         return this.answer(
           input,
           today,
-          { action: 'UNKNOWN', heldWrite: { action: intent.action, marker } },
+          {
+            action: 'UNKNOWN',
+            heldWrite: { action: intent.action, marker, intent },
+          },
           formatHeldJobApplicationWrite({ ...intent, action: intent.action }),
         );
       }
@@ -126,7 +132,10 @@ export class JobApplicationDispatcher implements AgentDispatcher {
     });
     return {
       agentRunId: outcome.agentRunId,
-      output: { ...parsedIntent, usedFallback: outcome.result.usedFallback },
+      output: {
+        ...withoutHeldIntent(parsedIntent),
+        usedFallback: outcome.result.usedFallback,
+      },
       modelUsed: outcome.modelUsed,
       formattedText:
         notice === undefined

@@ -69,3 +69,18 @@ export const findHypotheticalMarker = (
 // command 는 실제로 하려면 할 말("등록해줘").
 export const formatHeldWrite = (what: string, command: string): string =>
   `질문으로 보여서 ${what}하지 않았어요. 실제로 하려면 "${command}"처럼 말해 주세요.`;
+
+// 보류할 때 실은 의도(heldWrite.intent)를 dispatcher output 에서 뺀 사본. 의도는 재실행 재료라
+// inputSnapshot 에만 남긴다 — output 은 episodic 인덱스로 퍼지고, 발화 원문과 달리 redactPii 를
+// 거치지 않는다.
+export const withoutHeldIntent = (
+  parsedIntent: Record<string, unknown>,
+): Record<string, unknown> => {
+  const heldWrite = parsedIntent.heldWrite;
+  if (!heldWrite || typeof heldWrite !== 'object' || Array.isArray(heldWrite)) {
+    return parsedIntent;
+  }
+  const rest: Record<string, unknown> = { ...heldWrite };
+  delete rest.intent;
+  return { ...parsedIntent, heldWrite: rest };
+};

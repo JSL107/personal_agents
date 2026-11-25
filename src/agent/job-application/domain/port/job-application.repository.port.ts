@@ -26,6 +26,19 @@ export interface UpdateStatusByCompanyInput {
   nextFollowUpAt: PlainDate | null; // 비종료 전환 시 클럭 리셋, 종료 전환 시 null.
 }
 
+export interface FindActiveByCompanyRefInput {
+  slackUserId: string;
+  companyRef: string;
+}
+
+export interface UpdateStatusIfUnchangedInput {
+  slackUserId: string;
+  id: number;
+  expectedStatus: ApplicationStatus;
+  status: ApplicationStatus;
+  nextFollowUpAt: PlainDate | null;
+}
+
 export interface FindDueNudgesInput {
   slackUserId: string;
   today: PlainDate;
@@ -36,6 +49,12 @@ export interface JobApplicationRepositoryPort {
   save(input: SaveApplicationInput): Promise<JobApplicationRecord>;
   updateStatusByCompany(
     input: UpdateStatusByCompanyInput,
+  ): Promise<JobApplicationRecord | null>;
+  findActiveByCompanyRef(
+    input: FindActiveByCompanyRefInput,
+  ): Promise<JobApplicationRecord | null>;
+  updateStatusIfUnchanged(
+    input: UpdateStatusIfUnchangedInput,
   ): Promise<JobApplicationRecord | null>;
   listByUser(slackUserId: string): Promise<JobApplicationRecord[]>;
   findDueNudges(input: FindDueNudgesInput): Promise<JobApplicationRecord[]>;

@@ -12,6 +12,8 @@ import { ConsoleApproval, ConsoleSession } from '../domain/console.type';
 export const PREVIEW_KIND_TO_AGENT: Record<PreviewKind, AgentType | null> = {
   IDEA_SCHEDULE: AgentType.IDEA_TRIAGE,
   HELD_SCHEDULE_REGISTER: AgentType.RUN_RETRY,
+  HELD_VACATION_WRITE: AgentType.RUN_RETRY,
+  HELD_JOB_APPLICATION_WRITE: AgentType.RUN_RETRY,
   STUDY_APPLY_ISSUE: AgentType.CTO_STUDY,
   PM_WRITE_BACK: AgentType.PM,
   PO_EVAL_CAREERLOG: AgentType.PO_EVAL,

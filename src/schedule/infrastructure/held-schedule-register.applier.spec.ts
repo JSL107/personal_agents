@@ -95,6 +95,48 @@ describe('HeldScheduleRegisterApplier', () => {
     expect(registerSchedule.execute).not.toHaveBeenCalled();
   });
 
+  it('세 자리 연도는 기존 일정 날짜 범위대로 등록한다', async () => {
+    const { repository, registerSchedule } = createMocks();
+    const applier = new HeldScheduleRegisterApplier(
+      repository,
+      registerSchedule,
+    );
+    const dueDate = { year: 999, month: 1, day: 2 };
+
+    await applier.apply({
+      ...preview,
+      payload: { sourceRunId: 14034, title: '제목', dueDate },
+    });
+
+    expect(registerSchedule.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      title: '제목',
+      dueDate,
+    });
+  });
+
+  it('두 자리 연도는 UTC 정규화 때문에 기존처럼 거절한다', async () => {
+    const { repository, registerSchedule } = createMocks();
+    const applier = new HeldScheduleRegisterApplier(
+      repository,
+      registerSchedule,
+    );
+
+    await expect(
+      applier.apply({
+        ...preview,
+        payload: {
+          sourceRunId: 14034,
+          title: '제목',
+          dueDate: { year: 99, month: 1, day: 2 },
+        },
+      }),
+    ).rejects.toThrow(
+      'HeldScheduleRegisterPayload.dueDate 가 유효한 날짜가 아닙니다.',
+    );
+    expect(registerSchedule.execute).not.toHaveBeenCalled();
+  });
+
   it('정상 카드 승인 시 저장된 제목과 날짜로 등록한다', async () => {
     const { repository, registerSchedule } = createMocks();
     const progress = {

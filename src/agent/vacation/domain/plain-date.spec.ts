@@ -7,11 +7,38 @@ import {
   parsePlainDate,
   plainDateToIso,
   plainDateToUtcDate,
+  readPlainDate,
   utcDateToPlainDate,
   yearsElapsed,
 } from './plain-date';
 
 describe('plain-date', () => {
+  describe('readPlainDate', () => {
+    it('실제 날짜를 새 PlainDate 객체로 읽는다', () => {
+      const candidate = { year: 2024, month: 2, day: 29, extra: true };
+      const date = readPlainDate(candidate);
+      expect(date).toEqual({ year: 2024, month: 2, day: 29 });
+      expect(date).not.toBe(candidate);
+    });
+
+    it('정수가 아닌 성분이나 존재하지 않는 날짜는 거절한다', () => {
+      expect(readPlainDate({ year: '2024', month: 2, day: 29 })).toBeNull();
+      expect(readPlainDate({ year: 2024, month: 2.5, day: 29 })).toBeNull();
+      expect(readPlainDate({ year: 2026, month: 2, day: 29 })).toBeNull();
+      expect(readPlainDate({ year: 2026, month: 13, day: 1 })).toBeNull();
+      expect(readPlainDate([])).toBeNull();
+      expect(readPlainDate(null)).toBeNull();
+    });
+
+    it('호출부가 별도로 범위를 제한할 수 있도록 100 미만 연도도 달력 기준으로 읽는다', () => {
+      expect(readPlainDate({ year: 99, month: 1, day: 1 })).toEqual({
+        year: 99,
+        month: 1,
+        day: 1,
+      });
+    });
+  });
+
   describe('parsePlainDate', () => {
     it('YYYY-MM-DD 를 PlainDate 로 파싱', () => {
       expect(parsePlainDate('2026-07-01')).toEqual({

@@ -35,4 +35,125 @@ describe('classifyRetryTarget', () => {
       'OTHER',
     );
   });
+
+  it.each([
+    [
+      'REGISTER',
+      {
+        action: 'REGISTER',
+        startDate: { year: 2026, month: 12, day: 1 },
+        endDate: { year: 2026, month: 12, day: 2 },
+        memo: '여행',
+        fraction: 0.5,
+      },
+      'HELD_VACATION_REGISTER',
+    ],
+    ['CANCEL', { action: 'CANCEL', usageId: 12 }, 'HELD_VACATION_CANCEL'],
+  ])(
+    '휴가 %s 보류 의도가 유효하면 확인 카드 대상으로 판정한다',
+    (action, heldIntent, kind) => {
+      const target = classifyRetryTarget({
+        status: 'SUCCEEDED',
+        agentType: 'VACATION',
+        inputSnapshot: {
+          asOf: '2026-11-25',
+          parsedIntent: { heldWrite: { action, intent: heldIntent } },
+        },
+      });
+      expect(target.kind).toBe(kind);
+    },
+  );
+
+  it.each([
+    [
+      'ADD',
+      {
+        action: 'ADD',
+        company: '토스',
+        role: '백엔드',
+        status: 'APPLIED',
+        deadline: { year: 2026, month: 12, day: 1 },
+      },
+      'HELD_JOB_ADD',
+    ],
+    [
+      'UPDATE_STATUS',
+      { action: 'UPDATE_STATUS', ref: '토스', status: 'SCREENING' },
+      'HELD_JOB_UPDATE_STATUS',
+    ],
+  ])(
+    '지원 %s 보류 의도가 유효하면 확인 카드 대상으로 판정한다',
+    (action, heldIntent, kind) => {
+      const target = classifyRetryTarget({
+        status: 'SUCCEEDED',
+        agentType: 'JOB_APPLICATION',
+        inputSnapshot: {
+          today: '2026-11-25',
+          parsedIntent: { heldWrite: { action, intent: heldIntent } },
+        },
+      });
+      expect(target.kind).toBe(kind);
+    },
+  );
+
+  it.each([
+    [
+      'VACATION',
+      'REGISTER',
+      {
+        action: 'REGISTER',
+        startDate: { year: 2026, month: 12, day: 3 },
+        endDate: { year: 2026, month: 12, day: 2 },
+      },
+    ],
+    ['VACATION', 'CANCEL', { action: 'CANCEL', usageId: 0 }],
+    ['JOB_APPLICATION', 'ADD', { action: 'ADD', company: '', role: '백엔드' }],
+    [
+      'JOB_APPLICATION',
+      'UPDATE_STATUS',
+      { action: 'UPDATE_STATUS', ref: '토스', status: 'UNKNOWN' },
+    ],
+    [
+      'JOB_APPLICATION',
+      'ADD',
+      {
+        action: 'ADD',
+        company: '토스',
+        role: '백엔드',
+        jdUrl: 'javascript:alert(1)',
+      },
+    ],
+  ])(
+    '%s %s 보류 의도가 잘못됐으면 재실행을 거절한다',
+    (agentType, action, heldIntent) => {
+      const target = classifyRetryTarget({
+        status: 'SUCCEEDED',
+        agentType,
+        inputSnapshot: {
+          asOf: '2026-11-25',
+          today: '2026-11-25',
+          parsedIntent: { heldWrite: { action, intent: heldIntent } },
+        },
+      });
+      expect(target.kind).toBe('HELD_UNAVAILABLE');
+    },
+  );
+});
+
+describe('보류 일정 날짜 범위', () => {
+  it.each([99, 10000])('연도 %i는 재실행을 거절한다', (year) => {
+    const target = classifyRetryTarget({
+      status: 'SUCCEEDED',
+      agentType: 'SCHEDULE',
+      inputSnapshot: {
+        parsedIntent: {
+          kind: 'REGISTER',
+          title: '일정',
+          dueDate: { year, month: 1, day: 1 },
+          heldWrite: { action: 'REGISTER' },
+        },
+      },
+    });
+    expect(target.kind).toBe('HELD_UNAVAILABLE');
+  });
 });
