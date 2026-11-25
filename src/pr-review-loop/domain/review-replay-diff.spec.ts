@@ -39,6 +39,25 @@ describe('summarizeDiff', () => {
     });
   });
 
+  it('hunk 본문의 `--- `·`+++ ` 는 헤더가 아니라 `-- x` 를 지우거나 `++ x` 를 추가한 줄이다', () => {
+    const diff = [
+      'diff --git a/db/a.sql b/db/a.sql',
+      '--- a/db/a.sql',
+      '+++ b/db/a.sql',
+      '@@ -1,2 +1,2 @@',
+      '--- a/old comment',
+      '+++ b/new comment',
+      ' SELECT 1;',
+    ].join('\n');
+
+    expect(summarizeDiff(diff)).toMatchObject({
+      changedFiles: ['db/a.sql'],
+      changedLinesByFile: { 'db/a.sql': 2 },
+      additions: 1,
+      deletions: 1,
+    });
+  });
+
   it('따옴표·8진수로 이스케이프된 비ASCII 경로를 풀어 그 파일의 증감으로 센다', () => {
     const diff = [
       'diff --git a/src/a.ts b/src/a.ts',

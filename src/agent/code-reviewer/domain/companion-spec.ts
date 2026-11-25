@@ -7,6 +7,7 @@
  * 설계: `docs/superpowers/specs/2026-09-08-pr-review-depth-and-learning-design.md` §4 2단계.
  * 카드 571 경위: `docs/superpowers/plans/2026-10-13-companion-spec-order-result.md` §3.
  */
+import { isChangedLine, scanDiffLines } from './diff-added-lines';
 
 // 첨부 본문 합계 상한. 이 레포 spec 중앙값 4,050 bytes 기준 15개 분량(스펙 §4 초깃값, 실측 후 조정).
 export const COMPANION_SPEC_MAX_BYTES = 60 * 1024;
@@ -139,19 +140,16 @@ export const mapTestsToSources = (
 export const countChangedLines = (diff: string): Map<string, number> => {
   const counts = new Map<string, number>();
   let current: string | null = null;
-  for (const line of diff.split('\n')) {
-    if (line.startsWith('diff --git ')) {
-      const match = line.match(/ b\/(.+)$/);
+  for (const scanned of scanDiffLines(diff)) {
+    if (scanned.raw.startsWith('diff --git ')) {
+      const match = scanned.raw.match(/ b\/(.+)$/);
       current = match ? match[1] : null;
       if (current !== null && !counts.has(current)) {
         counts.set(current, 0);
       }
       continue;
     }
-    if (current === null || line.startsWith('+++') || line.startsWith('---')) {
-      continue;
-    }
-    if (line.startsWith('+') || line.startsWith('-')) {
+    if (current !== null && isChangedLine(scanned)) {
       counts.set(current, (counts.get(current) ?? 0) + 1);
     }
   }

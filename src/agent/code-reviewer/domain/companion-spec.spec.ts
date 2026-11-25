@@ -104,6 +104,19 @@ describe('countChangedLines', () => {
       ['src/b.ts', 1],
     ]);
   });
+
+  it('hunk 본문의 `--- `·`+++ ` 도 바뀐 줄로 센다', () => {
+    const diff = [
+      'diff --git a/db/a.sql b/db/a.sql',
+      '--- a/db/a.sql',
+      '+++ b/db/a.sql',
+      '@@ -1,2 +1,2 @@',
+      '--- old comment',
+      '+++ new comment',
+      ' SELECT 1;',
+    ].join('\n');
+    expect([...countChangedLines(diff)]).toEqual([['db/a.sql', 2]]);
+  });
 });
 
 describe('selectCompanionSpecs', () => {
