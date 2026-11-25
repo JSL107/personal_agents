@@ -429,11 +429,16 @@ export class ScheduleDispatcher implements AgentDispatcher {
     if (parseScheduleList({ text: prior.text, today }) !== null) {
       return { command, mergedPriorText: prior.text };
     }
+    // 직전 턴이 제목·날짜를 갖췄고 실행까지 남겼으면(등록 또는 질문 보류) 되묻기가 아니었다 — 그 날짜를
+    // 이번 문장에 붙이지 않는다. "오늘로 저 일정을 등록해줄래" 다음의 "실행번호 14034에 대해서 다시 해봐."
+    // 가 오늘 일정으로 등록됐다(2026-11-25 실행 14039). 원문만으로는 끝났는지 모른다 — 대화 추출이 실패해
+    // 제목을 되물은 "오늘 그거 등록해줘" 도 REGISTER 로 읽히지만 실행 id 가 0 이라 날짜를 잇는다(#1061 리뷰).
+    const priorCommand = parseScheduleCommand(prior.text, today);
+    if (priorCommand.kind === 'REGISTER' && (prior.agentRunId ?? 0) > 0) {
+      return { command };
+    }
     return {
-      command: mergeScheduleCommands(
-        parseScheduleCommand(prior.text, today),
-        command,
-      ),
+      command: mergeScheduleCommands(priorCommand, command),
       mergedPriorText: prior.text,
     };
   }
