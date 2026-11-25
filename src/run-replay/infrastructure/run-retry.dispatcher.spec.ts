@@ -198,7 +198,7 @@ describe('RunRetryDispatcher', () => {
     });
     countPreviews.execute.mockResolvedValue(1);
     expect((await dispatcher.dispatch(input)).formattedText).toContain(
-      '이미 다시 실행',
+      '이미 처리됐어요',
     );
     expect(preview.execute).not.toHaveBeenCalled();
   });

@@ -99,6 +99,35 @@ describe('HeldJobApplicationWriteApplier', () => {
     expect(result.message).toContain('이미');
   });
 
+  it('같은 날 넣은 같은 지원은 종료 상태여도 다시 추가하지 않는다', async () => {
+    const { repository, add, update } = createMocks();
+    repository.listByUser.mockResolvedValue([
+      { ...record, status: 'REJECTED' },
+    ]);
+    const result = await new HeldJobApplicationWriteApplier(
+      repository,
+      add,
+      update,
+    ).apply(preview);
+    expect(add.execute).not.toHaveBeenCalled();
+    expect(result.message).toContain('이미');
+  });
+
+  it('다른 날 끝난 같은 지원이면 새로 추가한다', async () => {
+    const { repository, add, update } = createMocks();
+    repository.listByUser.mockResolvedValue([
+      {
+        ...record,
+        status: 'REJECTED',
+        appliedAt: { year: 2025, month: 1, day: 2 },
+      },
+    ]);
+    await new HeldJobApplicationWriteApplier(repository, add, update).apply(
+      preview,
+    );
+    expect(add.execute).toHaveBeenCalled();
+  });
+
   it('지원 상태 변경은 카드의 id와 기대 상태를 usecase에 전달한다', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-11-25T00:00:00Z'));
     const { repository, add, update } = createMocks();

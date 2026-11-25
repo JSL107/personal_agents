@@ -173,7 +173,10 @@ export class RunRetryDispatcher implements AgentDispatcher {
       status: PREVIEW_STATUS.APPLIED,
     });
     if (applied > 0) {
-      return this.reply(`실행 #${runId} 은 이미 다시 실행했어요.`);
+      // 승인됐어도 실제로 쓰지 않았을 수 있다(지원 상태가 카드 뒤에 바뀜, 이미 있는 기록) — 처리됐다고만 말한다.
+      return this.reply(
+        `실행 #${runId} 의 확인 카드는 이미 처리됐어요. 다시 하려면 원래 문장을 '…해줘' 처럼 말해 주세요.`,
+      );
     }
     const payload: Record<string, unknown> = {};
     const lines: string[] = [];

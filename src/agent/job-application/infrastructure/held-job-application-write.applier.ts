@@ -204,16 +204,19 @@ export class HeldJobApplicationWriteApplier implements PreviewApplier {
     payload,
     progress,
   }: ApplyAddInput): Promise<ApplyResult> {
+    // 진행 중인 같은 지원, 또는 같은 날 넣은 같은 지원(종료 상태로 추가한 카드 두 장을 차례로 눌러도
+    // 두 번째가 막히게 — 상태와 무관하게 지원일로 본다)이 있으면 추가하지 않는다.
     const found = await this.repository.listByUser(preview.slackUserId);
     const duplicate = found.some(
       (record) =>
         record.company === payload.company &&
         record.role === payload.role &&
-        !TERMINAL_STATUSES.includes(record.status),
+        (!TERMINAL_STATUSES.includes(record.status) ||
+          isSameDate({ left: record.appliedAt, right: payload.appliedAt })),
     );
     if (duplicate) {
       return {
-        message: '같은 회사와 직무의 진행 중 지원이 이미 있어요.',
+        message: '같은 회사와 직무의 지원이 이미 있어요.',
         artifacts: [],
       };
     }
@@ -252,3 +255,14 @@ export class HeldJobApplicationWriteApplier implements PreviewApplier {
     return { message: formatUpdated(outcome.result), artifacts: [] };
   }
 }
+
+const isSameDate = ({
+  left,
+  right,
+}: {
+  left: PlainDate;
+  right: PlainDate;
+}): boolean =>
+  left.year === right.year &&
+  left.month === right.month &&
+  left.day === right.day;
