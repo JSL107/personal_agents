@@ -1,5 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import { readPlainDate } from '../../agent/vacation/domain/plain-date';
+import {
+  isNonEmptyString,
+  isPositiveSafeInteger,
+  isRecord,
+} from '../../common/util/type-guard.util';
 import { ApplyResult } from '../../preview-gate/domain/apply-result.type';
 import {
   ApplyProgress,
@@ -27,45 +33,26 @@ interface HeldScheduleRegisterPayload {
 const SCHEDULE_REGISTERED_STEP = 'schedule-registered:';
 
 const parsePayload = (payload: unknown): HeldScheduleRegisterPayload => {
-  if (typeof payload !== 'object' || payload === null) {
+  if (!isRecord(payload)) {
     throw new Error('HeldScheduleRegisterPayload 형식이 올바르지 않습니다.');
   }
-  const candidate = payload as Record<string, unknown>;
-  const rawDate = candidate.dueDate;
-  if (typeof rawDate !== 'object' || rawDate === null) {
-    throw new Error(
-      'HeldScheduleRegisterPayload.dueDate 형식이 올바르지 않습니다.',
-    );
-  }
-  const date = rawDate as Record<string, unknown>;
-  const dueDate: PlainDate = {
-    year: date.year as number,
-    month: date.month as number,
-    day: date.day as number,
-  };
-  if (
-    !Number.isSafeInteger(candidate.sourceRunId) ||
-    (candidate.sourceRunId as number) <= 0 ||
-    typeof candidate.title !== 'string' ||
-    candidate.title.trim().length === 0 ||
-    !Number.isInteger(dueDate.year) ||
-    !Number.isInteger(dueDate.month) ||
-    !Number.isInteger(dueDate.day)
-  ) {
+  const candidate = payload;
+  if (!isPositiveSafeInteger(candidate.sourceRunId)) {
     throw new Error('HeldScheduleRegisterPayload 필드가 올바르지 않습니다.');
   }
-  const normalized = plainDateToUtcDate(dueDate);
-  if (
-    normalized.getUTCFullYear() !== dueDate.year ||
-    normalized.getUTCMonth() + 1 !== dueDate.month ||
-    normalized.getUTCDate() !== dueDate.day
-  ) {
+  if (!isNonEmptyString(candidate.title)) {
+    throw new Error('HeldScheduleRegisterPayload 필드가 올바르지 않습니다.');
+  }
+  const dueDate = readPlainDate(candidate.dueDate);
+  // plainDateToUtcDate(Date.UTC)는 0~99년을 1900년대로 바꿔 엉뚱한 날짜로 등록한다.
+  const isTwoDigitYear = dueDate !== null && dueDate.year < 100;
+  if (!dueDate || isTwoDigitYear) {
     throw new Error(
       'HeldScheduleRegisterPayload.dueDate 가 유효한 날짜가 아닙니다.',
     );
   }
   return {
-    sourceRunId: candidate.sourceRunId as number,
+    sourceRunId: candidate.sourceRunId,
     title: candidate.title.trim(),
     dueDate,
   };

@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
+import {
+  isPositiveSafeInteger,
+  isRecord,
+} from '../../../common/util/type-guard.util';
 import { ApplyResult } from '../../../preview-gate/domain/apply-result.type';
 import {
   ApplyProgress,
@@ -17,9 +21,8 @@ import { CancelLeaveUsecase } from '../application/cancel-leave.usecase';
 import { RegisterLeaveUsecase } from '../application/register-leave.usecase';
 import {
   comparePlainDate,
-  parsePlainDate,
   PlainDate,
-  plainDateToIso,
+  readPlainDate,
   todayInKst,
 } from '../domain/plain-date';
 import { VacationException } from '../domain/vacation.exception';
@@ -55,52 +58,30 @@ interface ApplyCancelInput {
 const WRITTEN_STEP = 'vacation-written:';
 
 const parseDate = (candidate: unknown): PlainDate => {
-  if (typeof candidate !== 'object' || candidate === null) {
-    throw new Error('휴가 날짜 형식이 올바르지 않습니다.');
-  }
-  const fields = candidate as Record<string, unknown>;
-  if (
-    !Number.isInteger(fields.year) ||
-    !Number.isInteger(fields.month) ||
-    !Number.isInteger(fields.day)
-  ) {
-    throw new Error('휴가 날짜 형식이 올바르지 않습니다.');
-  }
-  const date = {
-    year: fields.year as number,
-    month: fields.month as number,
-    day: fields.day as number,
-  };
-  const parsed = parsePlainDate(plainDateToIso(date));
-  if (!parsed) {
+  const date = readPlainDate(candidate);
+  if (!date) {
     throw new Error('유효하지 않은 휴가 날짜입니다.');
   }
-  return parsed;
+  return date;
 };
 
 const parsePayload = (payload: unknown): HeldVacationPayload => {
-  if (typeof payload !== 'object' || payload === null) {
+  if (!isRecord(payload)) {
     throw new Error('휴가 승인 payload 형식이 올바르지 않습니다.');
   }
-  const candidate = payload as Record<string, unknown>;
-  if (
-    !Number.isSafeInteger(candidate.sourceRunId) ||
-    (candidate.sourceRunId as number) <= 0
-  ) {
+  const candidate = payload;
+  if (!isPositiveSafeInteger(candidate.sourceRunId)) {
     throw new Error('휴가 승인 sourceRunId가 올바르지 않습니다.');
   }
-  const sourceRunId = candidate.sourceRunId as number;
+  const sourceRunId = candidate.sourceRunId;
   if (candidate.action === 'CANCEL') {
-    if (
-      !Number.isSafeInteger(candidate.usageId) ||
-      (candidate.usageId as number) <= 0
-    ) {
+    if (!isPositiveSafeInteger(candidate.usageId)) {
       throw new Error('휴가 승인 usageId가 올바르지 않습니다.');
     }
     return {
       sourceRunId,
       action: 'CANCEL',
-      usageId: candidate.usageId as number,
+      usageId: candidate.usageId,
     };
   }
   if (candidate.action !== 'REGISTER') {
@@ -122,8 +103,8 @@ const parsePayload = (payload: unknown): HeldVacationPayload => {
     action: 'REGISTER',
     startDate,
     endDate,
-    memo: candidate.memo as string | undefined,
-    fraction: candidate.fraction as number | undefined,
+    memo: candidate.memo,
+    fraction: candidate.fraction,
   };
 };
 

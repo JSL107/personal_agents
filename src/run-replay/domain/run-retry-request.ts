@@ -1,3 +1,5 @@
+import { isPositiveSafeInteger } from '../../common/util/type-guard.util';
+
 // 실행을 다시 하라는 명시 동사. "다시" 만 보면 "결과 다시 보여줘" 같은 조회도 걸린다(#1064 리뷰).
 const RETRY_ORDER =
   /다시\s*(?:해|돌려|실행해|시도해)|재실행|재시도|한\s*번\s*더\s*(?:해|돌려|실행해)/;
@@ -18,5 +20,8 @@ export const parseRunRetryRequest = (text: string): number | null => {
     return null;
   }
   const runId = Number(matches[0][1]);
-  return Number.isSafeInteger(runId) && runId > 0 ? runId : null;
+  if (!isPositiveSafeInteger(runId)) {
+    return null;
+  }
+  return runId;
 };

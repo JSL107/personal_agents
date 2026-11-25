@@ -1,3 +1,5 @@
+import { isRecord } from '../../../common/util/type-guard.util';
+
 // 시·분·초·timezone 을 다루지 않는 달력 날짜 값 타입.
 // 레포에 date 라이브러리가 없어 Date 직접 사용 시 UTC/KST 오프셋으로 하루가 밀리는 함정을 피하기 위함.
 export interface PlainDate {
@@ -17,6 +19,26 @@ const isRealDate = (year: number, month: number, day: number): boolean => {
     date.getUTCMonth() === month - 1 &&
     date.getUTCDate() === day
   );
+};
+
+export const readPlainDate = (value: unknown): PlainDate | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const { year, month, day } = value;
+  if (!isInteger(year) || !isInteger(month) || !isInteger(day)) {
+    return null;
+  }
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  const validDate =
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day;
+  if (!validDate) {
+    return null;
+  }
+  return { year, month, day };
 };
 
 // 형식(YYYY-MM-DD) + 달력 유효성 검증. 어긋나면 null (호출자가 예외로 변환).
@@ -122,3 +144,6 @@ export const todayInKst = (now: Date): PlainDate => {
     day: kst.getUTCDate(),
   };
 };
+
+// Number.isInteger 는 숫자가 아닌 값에 false 를 돌려주지만 타입을 좁히지 않는다 — 좁혀 주는 가드로 감싼다.
+const isInteger = (value: unknown): value is number => Number.isInteger(value);

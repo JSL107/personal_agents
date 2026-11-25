@@ -139,3 +139,21 @@ describe('classifyRetryTarget', () => {
     },
   );
 });
+
+describe('보류 일정 날짜 범위', () => {
+  it.each([99, 10000])('연도 %i는 재실행을 거절한다', (year) => {
+    const target = classifyRetryTarget({
+      status: 'SUCCEEDED',
+      agentType: 'SCHEDULE',
+      inputSnapshot: {
+        parsedIntent: {
+          kind: 'REGISTER',
+          title: '일정',
+          dueDate: { year, month: 1, day: 1 },
+          heldWrite: { action: 'REGISTER' },
+        },
+      },
+    });
+    expect(target.kind).toBe('HELD_UNAVAILABLE');
+  });
+});

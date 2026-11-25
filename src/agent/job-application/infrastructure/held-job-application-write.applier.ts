@@ -1,5 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import {
+  isNonEmptyString,
+  isPositiveSafeInteger,
+  isRecord,
+} from '../../../common/util/type-guard.util';
 import { ApplyResult } from '../../../preview-gate/domain/apply-result.type';
 import {
   ApplyProgress,
@@ -10,15 +15,15 @@ import {
   PreviewAction,
 } from '../../../preview-gate/domain/preview-action.type';
 import {
-  parsePlainDate,
+  comparePlainDate,
   PlainDate,
-  plainDateToIso,
+  readPlainDate,
   todayInKst,
 } from '../../vacation/domain/plain-date';
 import { AddApplicationUsecase } from '../application/add-application.usecase';
 import { UpdateApplicationUsecase } from '../application/update-application.usecase';
+import { isApplicationStatus, isWebUrl } from '../domain/job-application.guard';
 import {
-  APPLICATION_STATUSES,
   ApplicationStatus,
   TERMINAL_STATUSES,
 } from '../domain/job-application.type';
@@ -61,55 +66,28 @@ interface ApplyUpdateInput {
 const WRITTEN_STEP = 'job-application-written:';
 
 const parseDate = (candidate: unknown): PlainDate => {
-  if (typeof candidate !== 'object' || candidate === null) {
-    throw new Error('지원 날짜 형식이 올바르지 않습니다.');
-  }
-  const fields = candidate as Record<string, unknown>;
-  if (
-    !Number.isInteger(fields.year) ||
-    !Number.isInteger(fields.month) ||
-    !Number.isInteger(fields.day)
-  ) {
-    throw new Error('지원 날짜 형식이 올바르지 않습니다.');
-  }
-  const date = {
-    year: fields.year as number,
-    month: fields.month as number,
-    day: fields.day as number,
-  };
-  const parsed = parsePlainDate(plainDateToIso(date));
-  if (!parsed) {
+  const date = readPlainDate(candidate);
+  if (!date) {
     throw new Error('유효하지 않은 지원 날짜입니다.');
   }
-  return parsed;
+  return date;
 };
 
 const parseStatus = (candidate: unknown): ApplicationStatus => {
-  if (
-    typeof candidate !== 'string' ||
-    !APPLICATION_STATUSES.includes(candidate as ApplicationStatus)
-  ) {
+  if (!isApplicationStatus(candidate)) {
     throw new Error('지원 상태가 올바르지 않습니다.');
   }
-  return candidate as ApplicationStatus;
+  return candidate;
 };
 
 const parseJobUrl = (candidate: unknown): string | undefined => {
   if (candidate === undefined) {
     return undefined;
   }
-  if (typeof candidate !== 'string' || candidate.trim().length === 0) {
+  if (!isWebUrl(candidate)) {
     throw new Error('지원 공고 링크가 올바르지 않습니다.');
   }
-  try {
-    const url = new URL(candidate);
-    if (url.protocol === 'http:' || url.protocol === 'https:') {
-      return candidate;
-    }
-  } catch {
-    throw new Error('지원 공고 링크가 올바르지 않습니다.');
-  }
-  throw new Error('지원 공고 링크가 올바르지 않습니다.');
+  return candidate;
 };
 
 const parseOptionalDate = (candidate: unknown): PlainDate | undefined => {
@@ -120,39 +98,33 @@ const parseOptionalDate = (candidate: unknown): PlainDate | undefined => {
 };
 
 const parsePayload = (payload: unknown): HeldJobPayload => {
-  if (typeof payload !== 'object' || payload === null) {
+  if (!isRecord(payload)) {
     throw new Error('지원 승인 payload 형식이 올바르지 않습니다.');
   }
-  const candidate = payload as Record<string, unknown>;
-  if (
-    !Number.isSafeInteger(candidate.sourceRunId) ||
-    (candidate.sourceRunId as number) <= 0
-  ) {
+  const candidate = payload;
+  if (!isPositiveSafeInteger(candidate.sourceRunId)) {
     throw new Error('지원 승인 sourceRunId가 올바르지 않습니다.');
   }
-  const sourceRunId = candidate.sourceRunId as number;
+  const sourceRunId = candidate.sourceRunId;
   if (candidate.action === 'UPDATE_STATUS') {
-    if (
-      !Number.isSafeInteger(candidate.applicationId) ||
-      (candidate.applicationId as number) <= 0
-    ) {
+    if (!isPositiveSafeInteger(candidate.applicationId)) {
       throw new Error('지원 승인 applicationId가 올바르지 않습니다.');
     }
     return {
       sourceRunId,
       action: 'UPDATE_STATUS',
-      applicationId: candidate.applicationId as number,
+      applicationId: candidate.applicationId,
       expectedStatus: parseStatus(candidate.expectedStatus),
       status: parseStatus(candidate.status),
     };
   }
-  if (
-    candidate.action !== 'ADD' ||
-    typeof candidate.company !== 'string' ||
-    candidate.company.trim().length === 0 ||
-    typeof candidate.role !== 'string' ||
-    candidate.role.trim().length === 0
-  ) {
+  if (candidate.action !== 'ADD') {
+    throw new Error('지원 승인 필드가 올바르지 않습니다.');
+  }
+  if (!isNonEmptyString(candidate.company)) {
+    throw new Error('지원 승인 필드가 올바르지 않습니다.');
+  }
+  if (!isNonEmptyString(candidate.role)) {
     throw new Error('지원 승인 필드가 올바르지 않습니다.');
   }
   const jdUrl = parseJobUrl(candidate.jdUrl);
@@ -212,7 +184,7 @@ export class HeldJobApplicationWriteApplier implements PreviewApplier {
         record.company === payload.company &&
         record.role === payload.role &&
         (!TERMINAL_STATUSES.includes(record.status) ||
-          isSameDate({ left: record.appliedAt, right: payload.appliedAt })),
+          comparePlainDate(record.appliedAt, payload.appliedAt) === 0),
     );
     if (duplicate) {
       return {
@@ -255,14 +227,3 @@ export class HeldJobApplicationWriteApplier implements PreviewApplier {
     return { message: formatUpdated(outcome.result), artifacts: [] };
   }
 }
-
-const isSameDate = ({
-  left,
-  right,
-}: {
-  left: PlainDate;
-  right: PlainDate;
-}): boolean =>
-  left.year === right.year &&
-  left.month === right.month &&
-  left.day === right.day;
