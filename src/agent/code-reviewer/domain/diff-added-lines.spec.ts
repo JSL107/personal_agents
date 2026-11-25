@@ -19,6 +19,26 @@ describe('listAddedLines', () => {
     ]);
   });
 
+  it('hunk 줄 수가 남았어도 `diff --git` 에서 다음 파일로 넘어간다', () => {
+    const diff = [
+      'diff --git a/a.ts b/a.ts',
+      '--- a/a.ts',
+      '+++ b/a.ts',
+      '@@ -1,3 +1 @@',
+      '+a',
+      'diff --git a/b.ts b/b.ts',
+      '--- a/b.ts',
+      '+++ b/b.ts',
+      '@@ -0,0 +1 @@',
+      '+b',
+    ].join('\n');
+
+    expect(listAddedLines(diff)).toEqual([
+      { file: 'a.ts', line: 1, text: 'a' },
+      { file: 'b.ts', line: 1, text: 'b' },
+    ]);
+  });
+
   it('hunk 본문 안의 `+++ ` 는 헤더가 아니라 추가 줄이다', () => {
     const diff = [
       '--- a/a.ts',

@@ -1,4 +1,10 @@
 import {
+  DiffLine,
+  DiffLineKind,
+  isChangedLine,
+  scanDiffLines,
+} from './diff-added-lines';
+import {
   CalibrationPoint,
   CalibrationReport,
   CalibrationSignal,
@@ -100,27 +106,24 @@ export const collectSignals = ({
   return Object.values(CalibrationSignal).filter((signal) => on[signal]);
 };
 
+const isManifestChange = (line: DiffLine): boolean =>
+  isChangedLine(line) && DEPENDENCY_MANIFEST.test(line.file ?? '');
+
 // major 가 바뀌었거나 0.x 에서 minor 가 바뀐 의존성이 하나라도 있는가.
 export const hasDependencyBump = (diff: string): boolean => {
   const removed = new Map<string, DependencyVersion>();
   const added = new Map<string, DependencyVersion>();
-  diff.split('\n').reduce((file, line) => {
-    if (line.startsWith('+++ ')) {
-      return line.replace(/^\+\+\+ (?:b\/)?/, '');
+  for (const line of scanDiffLines(diff).filter(isManifestChange)) {
+    const found = DEPENDENCY_LINE.exec(line.raw);
+    if (found === null) {
+      continue;
     }
-    if (line.startsWith('--- ') || !DEPENDENCY_MANIFEST.test(file)) {
-      return file;
-    }
-    const found = DEPENDENCY_LINE.exec(line);
-    if (found !== null) {
-      const target = line.startsWith('-') ? removed : added;
-      target.set(`${file}:${found[1]}`, {
-        major: Number(found[2]),
-        minor: Number(found[3]),
-      });
-    }
-    return file;
-  }, '');
+    const target = line.kind === DiffLineKind.REMOVED ? removed : added;
+    target.set(`${line.file}:${found[1]}`, {
+      major: Number(found[2]),
+      minor: Number(found[3]),
+    });
+  }
   return [...added].some(([key, after]) => {
     const before = removed.get(key);
     if (before === undefined) {
