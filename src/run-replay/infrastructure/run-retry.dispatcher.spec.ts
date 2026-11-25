@@ -75,11 +75,11 @@ describe('RunRetryDispatcher', () => {
     );
   });
   it.each([
-    ['APPLIED', '이미 다시 실행해 등록했어요'],
-    ['PENDING', '확인 카드가 이미 떠 있어요'],
+    ['APPLIED', 1, '이미 다시 실행해 등록했어요'],
+    ['PENDING', 0, '등록할까요?'],
   ])(
-    '같은 실행의 %s 카드가 있으면 새 카드를 만들지 않는다',
-    async (status, message) => {
+    '같은 실행의 %s 카드는 새 카드를 막는가 (승인된 카드만 막는다)',
+    async (_status, appliedCount, message) => {
       repository.findById.mockResolvedValue({
         id: 123,
         status: 'SUCCEEDED',
@@ -94,18 +94,17 @@ describe('RunRetryDispatcher', () => {
           },
         },
       });
-      countPreviews.execute.mockImplementation(
-        async (query: { status: string }) => (query.status === status ? 1 : 0),
-      );
+      countPreviews.execute.mockResolvedValue(appliedCount);
+      preview.execute.mockResolvedValue({ id: 'p2' });
       const outcome = await dispatcher.dispatch(input);
       expect(outcome.formattedText).toContain(message);
-      expect(outcome.preview).toBeUndefined();
-      expect(preview.execute).not.toHaveBeenCalled();
+      expect(outcome.preview?.id).toBe(appliedCount > 0 ? undefined : 'p2');
       expect(countPreviews.execute).toHaveBeenCalledWith(
         expect.objectContaining({
           kind: 'HELD_SCHEDULE_REGISTER',
           payloadPath: ['sourceRunId'],
           payloadValue: 123,
+          status: 'APPLIED',
         }),
       );
     },

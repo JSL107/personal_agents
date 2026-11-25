@@ -10,7 +10,6 @@ import { CreatePreviewUsecase } from '../../preview-gate/application/create-prev
 import {
   PREVIEW_KIND,
   PREVIEW_STATUS,
-  PreviewStatus,
 } from '../../preview-gate/domain/preview-action.type';
 import { DispatchInput } from '../../router/domain/idaeri-router.port';
 import {
@@ -81,9 +80,9 @@ export class RunRetryDispatcher implements AgentDispatcher {
       };
     }
     if (target.kind === 'HELD_SCHEDULE') {
-      // 멱등 기록(ApplyProgress)은 카드 단위라, 같은 실행으로 카드를 두 장 띄워 둘 다 누르면 두 번
-      // 등록된다. 대기 중이거나 이미 승인된 카드가 있으면 새 카드를 만들지 않는다. 만료·취소된 카드는
-      // 다시 만들 수 있다.
+      // 이미 승인된 카드가 있으면 새 카드를 만들지 않는다. 대기 중 카드는 보지 않는다 — 만료됐거나
+      // Slack 전송에 실패한 카드도 스위퍼가 돌기 전까지 PENDING 으로 남아 새 카드를 막는다. 카드 두
+      // 장을 차례로 눌러도 두 번째는 applier 의 같은 제목·날짜 검사에서 걸린다.
       const handled = await this.findHandledCard(runId);
       if (handled !== null) {
         return this.reply(handled);
@@ -120,20 +119,16 @@ export class RunRetryDispatcher implements AgentDispatcher {
   }
 
   private async findHandledCard(runId: number): Promise<string | null> {
-    const countByStatus = (status: PreviewStatus): Promise<number> =>
-      this.countPreviews.execute({
-        kind: PREVIEW_KIND.HELD_SCHEDULE_REGISTER,
-        payloadPath: ['sourceRunId'],
-        payloadValue: runId,
-        status,
-      });
-    if ((await countByStatus(PREVIEW_STATUS.APPLIED)) > 0) {
-      return `실행 #${runId} 의 일정은 이미 다시 실행해 등록했어요.`;
+    const applied = await this.countPreviews.execute({
+      kind: PREVIEW_KIND.HELD_SCHEDULE_REGISTER,
+      payloadPath: ['sourceRunId'],
+      payloadValue: runId,
+      status: PREVIEW_STATUS.APPLIED,
+    });
+    if (applied === 0) {
+      return null;
     }
-    if ((await countByStatus(PREVIEW_STATUS.PENDING)) > 0) {
-      return `실행 #${runId} 의 확인 카드가 이미 떠 있어요. 그 카드에서 등록할지 골라 주세요.`;
-    }
-    return null;
+    return `실행 #${runId} 의 일정은 이미 다시 실행해 등록했어요.`;
   }
 
   private reply(formattedText: string): DispatchOutcome {

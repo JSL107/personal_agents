@@ -9,6 +9,9 @@ describe('parseRunRetryRequest', () => {
     expect(parseRunRetryRequest(text)).toBe(14034);
   });
   it.each([
+    '실행번호 14034 다시 하지 마',
+    '실행번호 14034 다시 돌리는 방법 알려줘',
+    '실행번호 14034 왜 다시 실패했어?',
     '실행번호 14034 결과 보여줘',
     '다시 해봐',
     '<https://x?a=1> 실행번호 다시',

@@ -48,7 +48,6 @@ const parsePayload = (payload: unknown): HeldScheduleRegisterPayload => {
     (candidate.sourceRunId as number) <= 0 ||
     typeof candidate.title !== 'string' ||
     candidate.title.trim().length === 0 ||
-    candidate.title.trim().length > 40 ||
     !Number.isInteger(dueDate.year) ||
     !Number.isInteger(dueDate.month) ||
     !Number.isInteger(dueDate.day)

@@ -56,6 +56,26 @@ const createMocks = () => {
 };
 
 describe('HeldScheduleRegisterApplier', () => {
+  // 일정 등록에는 길이 제한이 없다 — 카드는 떴는데 승인에서 거절되면 안 된다.
+  it('40자가 넘는 제목도 등록한다', async () => {
+    const { repository, registerSchedule } = createMocks();
+    const applier = new HeldScheduleRegisterApplier(
+      repository,
+      registerSchedule,
+    );
+    const title =
+      '이력서 손으로 쓰기 (각회사에서 보여주고싶었던게 뭔지 정리) 그리고 포트폴리오 링크 확인';
+
+    await applier.apply({
+      ...preview,
+      payload: { ...(preview.payload as object), title },
+    });
+
+    expect(registerSchedule.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ title }),
+    );
+  });
+
   it('잘못된 날짜 payload 면 등록 전에 거절한다', async () => {
     const { repository, registerSchedule } = createMocks();
     const applier = new HeldScheduleRegisterApplier(
